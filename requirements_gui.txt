@@ -1,0 +1,6 @@
+# Dependencies untuk 5G Emulator GUI
+tkinter  # Biasanya sudah termasuk dalam Python
+# Untuk fungsionalitas tambahan:
+pillow>=8.0.0  # Untuk manipulasi gambar (jika diperlukan)
+# mininet-wifi (install terpisah)
+# docker (install terpisah)

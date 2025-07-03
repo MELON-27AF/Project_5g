@@ -1,0 +1,302 @@
+{
+  "name": "Multi-Cell 5G Network Template",
+  "description": "Template untuk jaringan 5G dengan multiple cell dan handover support",
+  "components": {
+    "AMF_1": {
+      "id": "AMF_1",
+      "type": "AMF",
+      "name": "Central-AMF",
+      "x": 400,
+      "y": 300,
+      "config": {
+        "plmn_id": {
+          "mcc": "999",
+          "mnc": "70"
+        },
+        "port": 7777,
+        "tai": [
+          {
+            "tac": 1
+          },
+          {
+            "tac": 2
+          },
+          {
+            "tac": 3
+          }
+        ]
+      },
+      "connections": ["SMF_1", "NRF_1"]
+    },
+    "SMF_1": {
+      "id": "SMF_1",
+      "type": "SMF",
+      "name": "Central-SMF",
+      "x": 500,
+      "y": 400,
+      "config": {
+        "port": 7777,
+        "pfcp_port": 8805,
+        "subnet": [
+          {
+            "addr": "10.45.0.1/16",
+            "dnn": "internet"
+          }
+        ]
+      },
+      "connections": ["AMF_1", "UPF_1", "UPF_2", "NRF_1"]
+    },
+    "UPF_1": {
+      "id": "UPF_1",
+      "type": "UPF",
+      "name": "Edge-UPF-1",
+      "x": 200,
+      "y": 500,
+      "config": {
+        "pfcp_port": 8805,
+        "gtpu_port": 2152,
+        "subnet": "10.45.0.1/16"
+      },
+      "connections": ["SMF_1", "Router_1"]
+    },
+    "UPF_2": {
+      "id": "UPF_2",
+      "type": "UPF",
+      "name": "Edge-UPF-2",
+      "x": 600,
+      "y": 500,
+      "config": {
+        "pfcp_port": 8806,
+        "gtpu_port": 2153,
+        "subnet": "10.46.0.1/16"
+      },
+      "connections": ["SMF_1", "Router_2"]
+    },
+    "NRF_1": {
+      "id": "NRF_1",
+      "type": "NRF",
+      "name": "Central-NRF",
+      "x": 300,
+      "y": 300,
+      "config": {
+        "port": 7777
+      },
+      "connections": ["AMF_1", "SMF_1", "UDM_1", "PCF_1"]
+    },
+    "UDM_1": {
+      "id": "UDM_1",
+      "type": "UDM",
+      "name": "Central-UDM",
+      "x": 200,
+      "y": 200,
+      "config": {
+        "port": 7777
+      },
+      "connections": ["NRF_1", "UDR_1"]
+    },
+    "UDR_1": {
+      "id": "UDR_1",
+      "type": "UDR",
+      "name": "Central-UDR",
+      "x": 100,
+      "y": 100,
+      "config": {
+        "port": 7777,
+        "mongodb_uri": "mongodb://localhost:27017/open5gs"
+      },
+      "connections": ["UDM_1"]
+    },
+    "PCF_1": {
+      "id": "PCF_1",
+      "type": "PCF",
+      "name": "Central-PCF",
+      "x": 500,
+      "y": 200,
+      "config": {
+        "port": 7777
+      },
+      "connections": ["NRF_1"]
+    },
+    "gNB_1": {
+      "id": "gNB_1",
+      "type": "gNB",
+      "name": "Cell-1",
+      "x": 100,
+      "y": 400,
+      "config": {
+        "mcc": "999",
+        "mnc": "70",
+        "nci": 1,
+        "tac": 1,
+        "linkIp": "127.0.0.1",
+        "ngapIp": "127.0.0.1",
+        "gtpIp": "127.0.0.1"
+      },
+      "connections": ["Router_1", "UE_1", "UE_3"]
+    },
+    "gNB_2": {
+      "id": "gNB_2",
+      "type": "gNB",
+      "name": "Cell-2",
+      "x": 400,
+      "y": 600,
+      "config": {
+        "mcc": "999",
+        "mnc": "70",
+        "nci": 2,
+        "tac": 2,
+        "linkIp": "127.0.0.2",
+        "ngapIp": "127.0.0.2",
+        "gtpIp": "127.0.0.2"
+      },
+      "connections": ["Router_1", "Router_2", "UE_2", "UE_4"]
+    },
+    "gNB_3": {
+      "id": "gNB_3",
+      "type": "gNB",
+      "name": "Cell-3",
+      "x": 700,
+      "y": 400,
+      "config": {
+        "mcc": "999",
+        "mnc": "70",
+        "nci": 3,
+        "tac": 3,
+        "linkIp": "127.0.0.3",
+        "ngapIp": "127.0.0.3",
+        "gtpIp": "127.0.0.3"
+      },
+      "connections": ["Router_2", "UE_5", "UE_6"]
+    },
+    "UE_1": {
+      "id": "UE_1",
+      "type": "UE",
+      "name": "Mobile-1",
+      "x": 50,
+      "y": 350,
+      "config": {
+        "imsi": "999700000000001",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "plmn": "99970"
+      },
+      "connections": ["gNB_1"]
+    },
+    "UE_2": {
+      "id": "UE_2",
+      "type": "UE",
+      "name": "Mobile-2",
+      "x": 350,
+      "y": 650,
+      "config": {
+        "imsi": "999700000000002",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "plmn": "99970"
+      },
+      "connections": ["gNB_2"]
+    },
+    "UE_3": {
+      "id": "UE_3",
+      "type": "UE",
+      "name": "Mobile-3",
+      "x": 150,
+      "y": 450,
+      "config": {
+        "imsi": "999700000000003",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "plmn": "99970"
+      },
+      "connections": ["gNB_1"]
+    },
+    "UE_4": {
+      "id": "UE_4",
+      "type": "UE",
+      "name": "Mobile-4",
+      "x": 450,
+      "y": 650,
+      "config": {
+        "imsi": "999700000000004",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "plmn": "99970"
+      },
+      "connections": ["gNB_2"]
+    },
+    "UE_5": {
+      "id": "UE_5",
+      "type": "UE",
+      "name": "Mobile-5",
+      "x": 750,
+      "y": 350,
+      "config": {
+        "imsi": "999700000000005",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "plmn": "99970"
+      },
+      "connections": ["gNB_3"]
+    },
+    "UE_6": {
+      "id": "UE_6",
+      "type": "UE",
+      "name": "Mobile-6",
+      "x": 650,
+      "y": 450,
+      "config": {
+        "imsi": "999700000000006",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "plmn": "99970"
+      },
+      "connections": ["gNB_3"]
+    },
+    "Router_1": {
+      "id": "Router_1",
+      "type": "Router",
+      "name": "Edge-Router-1",
+      "x": 200,
+      "y": 450,
+      "config": {
+        "ip": "192.168.1.1",
+        "interfaces": [
+          "eth0: 10.45.0.1/16",
+          "eth1: 192.168.1.1/24"
+        ]
+      },
+      "connections": ["UPF_1", "gNB_1", "gNB_2"]
+    },
+    "Router_2": {
+      "id": "Router_2",
+      "type": "Router",
+      "name": "Edge-Router-2",
+      "x": 600,
+      "y": 450,
+      "config": {
+        "ip": "192.168.2.1",
+        "interfaces": [
+          "eth0: 10.46.0.1/16", 
+          "eth1: 192.168.2.1/24"
+        ]
+      },
+      "connections": ["UPF_2", "gNB_2", "gNB_3"]
+    }
+  },
+  "connections": [
+    ["AMF_1", "SMF_1"],
+    ["AMF_1", "NRF_1"],
+    ["SMF_1", "UPF_1"],
+    ["SMF_1", "UPF_2"],
+    ["SMF_1", "NRF_1"],
+    ["UPF_1", "Router_1"],
+    ["UPF_2", "Router_2"],
+    ["NRF_1", "UDM_1"],
+    ["NRF_1", "PCF_1"],
+    ["UDM_1", "UDR_1"],
+    ["gNB_1", "Router_1"],
+    ["gNB_1", "UE_1"],
+    ["gNB_1", "UE_3"],
+    ["gNB_2", "Router_1"],
+    ["gNB_2", "Router_2"],
+    ["gNB_2", "UE_2"],
+    ["gNB_2", "UE_4"],
+    ["gNB_3", "Router_2"],
+    ["gNB_3", "UE_5"],
+    ["gNB_3", "UE_6"]
+  ]
+}

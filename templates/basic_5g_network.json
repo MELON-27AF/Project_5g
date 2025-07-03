@@ -1,0 +1,166 @@
+{
+  "name": "Basic 5G Network Template",
+  "description": "Template dasar untuk jaringan 5G dengan komponen minimum",
+  "components": {
+    "AMF_1": {
+      "id": "AMF_1",
+      "type": "AMF",
+      "name": "Core-AMF",
+      "x": 300,
+      "y": 200,
+      "config": {
+        "plmn_id": {
+          "mcc": "999",
+          "mnc": "70"
+        },
+        "port": 7777,
+        "tai": {
+          "tac": 1
+        },
+        "sbi_server_port": 7777
+      },
+      "connections": ["SMF_1", "NRF_1"]
+    },
+    "SMF_1": {
+      "id": "SMF_1",
+      "type": "SMF",
+      "name": "Core-SMF",
+      "x": 400,
+      "y": 300,
+      "config": {
+        "port": 7777,
+        "pfcp_port": 8805,
+        "gtpc_port": 2123,
+        "dns": ["8.8.8.8", "8.8.4.4"]
+      },
+      "connections": ["AMF_1", "UPF_1", "NRF_1"]
+    },
+    "UPF_1": {
+      "id": "UPF_1",
+      "type": "UPF",
+      "name": "Core-UPF",
+      "x": 500,
+      "y": 200,
+      "config": {
+        "pfcp_port": 8805,
+        "gtpu_port": 2152,
+        "advertise": "127.0.0.7"
+      },
+      "connections": ["SMF_1", "Switch_1"]
+    },
+    "NRF_1": {
+      "id": "NRF_1",
+      "type": "NRF",
+      "name": "Core-NRF",
+      "x": 200,
+      "y": 300,
+      "config": {
+        "port": 7777,
+        "sbi_server_port": 7777
+      },
+      "connections": ["AMF_1", "SMF_1", "UDM_1"]
+    },
+    "UDM_1": {
+      "id": "UDM_1",
+      "type": "UDM",
+      "name": "Core-UDM",
+      "x": 100,
+      "y": 200,
+      "config": {
+        "port": 7777,
+        "sbi_server_port": 7777
+      },
+      "connections": ["NRF_1", "UDR_1"]
+    },
+    "UDR_1": {
+      "id": "UDR_1",
+      "type": "UDR",
+      "name": "Core-UDR",
+      "x": 100,
+      "y": 100,
+      "config": {
+        "port": 7777,
+        "sbi_server_port": 7777,
+        "mongodb_uri": "mongodb://localhost:27017/open5gs"
+      },
+      "connections": ["UDM_1"]
+    },
+    "gNB_1": {
+      "id": "gNB_1",
+      "type": "gNB",
+      "name": "BaseStation-1",
+      "x": 600,
+      "y": 100,
+      "config": {
+        "mcc": "999",
+        "mnc": "70",
+        "nci": 1,
+        "tac": 1,
+        "linkIp": "127.0.0.1",
+        "ngapIp": "127.0.0.1",
+        "gtpIp": "127.0.0.1",
+        "plmnList": [
+          {
+            "mcc": "999",
+            "mnc": "70"
+          }
+        ]
+      },
+      "connections": ["Switch_1", "UE_1", "UE_2"]
+    },
+    "UE_1": {
+      "id": "UE_1",
+      "type": "UE",
+      "name": "Device-1",
+      "x": 700,
+      "y": 50,
+      "config": {
+        "imsi": "999700000000001",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "opc": "E8ED289DEBA952E4283B54E88E6183CA",
+        "plmn": "99970",
+        "gnbSearchList": ["127.0.0.1:4997"]
+      },
+      "connections": ["gNB_1"]
+    },
+    "UE_2": {
+      "id": "UE_2",
+      "type": "UE",
+      "name": "Device-2",
+      "x": 700,
+      "y": 150,
+      "config": {
+        "imsi": "999700000000002",
+        "key": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+        "opc": "E8ED289DEBA952E4283B54E88E6183CA",
+        "plmn": "99970",
+        "gnbSearchList": ["127.0.0.1:4997"]
+      },
+      "connections": ["gNB_1"]
+    },
+    "Switch_1": {
+      "id": "Switch_1",
+      "type": "Switch",
+      "name": "Core-Switch",
+      "x": 500,
+      "y": 100,
+      "config": {
+        "dpid": 1,
+        "protocols": "OpenFlow13"
+      },
+      "connections": ["UPF_1", "gNB_1"]
+    }
+  },
+  "connections": [
+    ["AMF_1", "SMF_1"],
+    ["AMF_1", "NRF_1"],
+    ["SMF_1", "UPF_1"],
+    ["SMF_1", "NRF_1"],
+    ["UPF_1", "Switch_1"],
+    ["NRF_1", "UDM_1"],
+    ["UDM_1", "UDR_1"],
+    ["gNB_1", "Switch_1"],
+    ["gNB_1", "UE_1"],
+    ["gNB_1", "UE_2"]
+  ]
+}
