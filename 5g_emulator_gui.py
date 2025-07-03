@@ -168,6 +168,10 @@ class DragDropCanvas:
         self.canvas.bind("<Button-3>", self.on_right_click)
         self.canvas.bind("<Double-Button-1>", self.on_double_click)
         
+        # Drop event for drag and drop from component panel
+        self.canvas.bind("<Button1-Motion>", self.on_canvas_drag_motion)
+        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_drop)
+        
     def add_component(self, component_type: str, x: float, y: float) -> str:
         """Menambahkan komponen baru ke canvas"""
         component_id = f"{component_type}_{len([c for c in self.components.values() if c.type == component_type]) + 1}"
@@ -640,7 +644,18 @@ class FiveGEmulatorGUI:
         self.root = tk.Tk()
         self.root.title("5G Network Emulator")
         self.root.geometry("1400x900")
-        self.root.state('zoomed')  # Maximize window on Windows
+        
+        # Platform-specific window maximization
+        try:
+            # Try Windows style first
+            self.root.state('zoomed')
+        except tk.TclError:
+            # For Linux/Mac, use attributes
+            try:
+                self.root.attributes('-zoomed', True)
+            except tk.TclError:
+                # If both fail, just use large geometry
+                self.root.geometry("1400x900")
         
         self.current_file = None
         self.create_widgets()
@@ -656,6 +671,13 @@ class FiveGEmulatorGUI:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="New", command=self.new_topology, accelerator="Ctrl+N")
         file_menu.add_command(label="Open", command=self.open_topology, accelerator="Ctrl+O")
+        file_menu.add_separator()
+        # Templates submenu
+        templates_menu = tk.Menu(file_menu, tearoff=0)
+        file_menu.add_cascade(label="Load Template", menu=templates_menu)
+        templates_menu.add_command(label="Basic 5G Network", command=self.load_basic_template)
+        templates_menu.add_command(label="Multi-Cell Network", command=self.load_multicell_template)
+        file_menu.add_separator()
         file_menu.add_command(label="Save", command=self.save_topology, accelerator="Ctrl+S")
         file_menu.add_command(label="Save As", command=self.save_topology_as, accelerator="Ctrl+Shift+S")
         file_menu.add_separator()
@@ -769,14 +791,27 @@ class FiveGEmulatorGUI:
         control_frame = ttk.Frame(left_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Button(control_frame, text="🔗 Connection Mode", 
-                  command=self.toggle_connection_mode).pack(fill=tk.X, pady=2)
-        ttk.Button(control_frame, text="🗑️ Clear All", 
-                  command=self.clear_topology).pack(fill=tk.X, pady=2)
-        ttk.Button(control_frame, text="▶️ Start Emulation", 
-                  command=self.start_emulation).pack(fill=tk.X, pady=2)
-        ttk.Button(control_frame, text="⏹️ Stop Emulation", 
-                  command=self.stop_emulation).pack(fill=tk.X, pady=2)
+        # Template buttons
+        template_frame = ttk.LabelFrame(control_frame, text="Quick Templates")
+        template_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Button(template_frame, text="📊 Basic 5G", 
+                  command=self.load_basic_template).pack(fill=tk.X, pady=1)
+        ttk.Button(template_frame, text="🏢 Multi-Cell", 
+                  command=self.load_multicell_template).pack(fill=tk.X, pady=1)
+        
+        # Action buttons
+        action_frame = ttk.LabelFrame(control_frame, text="Actions")
+        action_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(action_frame, text="🔗 Connection Mode", 
+                  command=self.toggle_connection_mode).pack(fill=tk.X, pady=1)
+        ttk.Button(action_frame, text="🗑️ Clear All", 
+                  command=self.clear_topology).pack(fill=tk.X, pady=1)
+        ttk.Button(action_frame, text="▶️ Start Emulation", 
+                  command=self.start_emulation).pack(fill=tk.X, pady=1)
+        ttk.Button(action_frame, text="⏹️ Stop Emulation", 
+                  command=self.stop_emulation).pack(fill=tk.X, pady=1)
         
         # Right panel - Canvas
         right_frame = ttk.Frame(main_paned)
@@ -1000,10 +1035,24 @@ class FiveGEmulatorGUI:
     def stop_emulation(self):
         """Menghentikan emulasi"""
         try:
-            # Kill mininet processes
-            subprocess.run(['sudo', 'mn', '-c'], check=False)
-            self.status_var.set("Emulation stopped")
-            messagebox.showinfo("Info", "Emulation stopped and cleaned up")
+            # Kill mininet processes - check if mn command exists
+            import platform
+            if platform.system() == "Windows":
+                # Windows doesn't have mininet typically
+                self.status_var.set("Emulation stopped")
+                messagebox.showinfo("Info", "Emulation stopped (Windows)")
+            else:
+                # Try with sudo first, then without
+                try:
+                    subprocess.run(['sudo', 'mn', '-c'], check=False, timeout=10)
+                except (subprocess.TimeoutExpired, FileNotFoundError):
+                    try:
+                        subprocess.run(['mn', '-c'], check=False, timeout=10)
+                    except (subprocess.TimeoutExpired, FileNotFoundError):
+                        pass  # mn command not found, that's okay
+                
+                self.status_var.set("Emulation stopped")
+                messagebox.showinfo("Info", "Emulation stopped and cleaned up")
         except Exception as e:
             messagebox.showerror("Error", f"Error stopping emulation:\n{str(e)}")
     
