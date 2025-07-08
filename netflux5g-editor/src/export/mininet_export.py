@@ -441,6 +441,14 @@ class MininetExporter:
                         debug_print(f"DEBUG: Created basic config file (fallback): {config_file}")
                         config_files_created += 1
         
+        # Create UE configuration files
+        ue_config_files = self.create_ue_config_files(config_dir, categorized_nodes)
+        config_files_created += ue_config_files
+        
+        # Create gNB configuration files
+        gnb_config_files = self.create_gnb_config_files(config_dir, categorized_nodes)
+        config_files_created += gnb_config_files
+        
         if config_files_created > 0:
             debug_print(f"DEBUG: Successfully created {config_files_created} config files")
         else:
@@ -451,9 +459,14 @@ class MininetExporter:
         try:
             if isinstance(config_content, dict):
                 # If it's a dict, convert to YAML format
-                import yaml
-                with open(file_path, 'w') as f:
-                    yaml.dump(config_content, f, default_flow_style=False)
+                try:
+                    import yaml
+                    with open(file_path, 'w') as f:
+                        yaml.dump(config_content, f, default_flow_style=False)
+                except ImportError:
+                    # If PyYAML is not available, use a simple string representation
+                    with open(file_path, 'w') as f:
+                        f.write(str(config_content))
             else:
                 # If it's already a string, write directly
                 with open(file_path, 'w') as f:
@@ -906,7 +919,9 @@ logger:
                 volumes = [
                     '"/sys:/sys"',
                     '"/lib/modules:/lib/modules"',
-                    '"/sys/kernel/debug:/sys/kernel/debug"'
+                    '"/sys/kernel/debug:/sys/kernel/debug"',
+                    'cwd + "/config:/config:ro"',
+                    'cwd + "/logging:/logging"'
                 ]
                 f.write(f'                "volumes": [{", ".join(volumes)}],\n')
                 
@@ -1008,6 +1023,7 @@ logger:
                 f.write(f'                "devices": ["/dev/net/tun"],\n')
                 f.write(f'                "cap_add": ["net_admin"],\n')
                 f.write(f'                "network_mode": NETWORK_MODE,\n')
+                f.write(f'                "volumes": [cwd + "/config:/config:ro", cwd + "/logging:/logging"],\n')
                 
                 # Add enhanced power and range configuration from ConfigurationMapper
                 from manager.configmap import ConfigurationMapper
@@ -1284,6 +1300,11 @@ logger:
         # Add working directory variable
         f.write('    cwd = os.getcwd()  # Current Working Directory\n\n')
         
+        # Create logging directory if it doesn't exist
+        f.write('    # Create logging directory for container logs\n')
+        f.write('    import os\n')
+        f.write('    os.makedirs(os.path.join(cwd, "logging"), exist_ok=True)\n\n')
+        
         # Generate code for each 5G core component type
         for comp_type, components in core_components.items():
             if components:
@@ -1472,7 +1493,9 @@ logger:
             f.write('    info("*** Post configure Docker gNB connection to AMF\\n")\n')
             for gnb in categorized_nodes['gnbs']:
                 gnb_name = self.sanitize_variable_name(gnb['name'])
-                f.write(f'    makeTerm2({gnb_name}, cmd="/entrypoint.sh gnb 2>&1 | tee -a /logging/{gnb_name}.log")\n')
+                # Use specific gNB configuration file for each gNB
+                config_file = f"{gnb_name}.yaml"
+                f.write(f'    makeTerm2({gnb_name}, cmd="/entrypoint.sh gnb /config/{config_file} 2>&1 | tee -a /logging/{gnb_name}.log")\n')
             f.write('\n')
             f.write('    CLI.do_sh(net, "sleep 10")\n\n')
         
@@ -1481,16 +1504,30 @@ logger:
             f.write('    info("*** Post configure Docker UE nodes\\n")\n')
             for ue in categorized_nodes['ues']:
                 ue_name = self.sanitize_variable_name(ue['name'])
-                f.write(f'    makeTerm2({ue_name}, cmd="/entrypoint.sh ue 2>&1 | tee -a /logging/{ue_name}.log")\n')
+                # Use specific UE configuration file for each UE
+                config_file = f"{ue_name}.yaml"
+                f.write(f'    makeTerm2({ue_name}, cmd="/entrypoint.sh ue /config/{config_file} 2>&1 | tee -a /logging/{ue_name}.log")\n')
             f.write('\n')
             f.write('    CLI.do_sh(net, "sleep 20")\n\n')
             
-            # Add UE routing configuration
-            f.write('    info("*** Route traffic on UE for End-to-End and End-to-Edge Connection\\n")\n')
+            # Add UE routing configuration - wait for uesimtun interface to be created
+            f.write('    info("*** Waiting for uesimtun interface creation and configuring routes\\n")\n')
             for i, ue in enumerate(categorized_nodes['ues'], 1):
                 ue_name = self.sanitize_variable_name(ue['name'])
                 props = ue.get('properties', {})
                 apn = props.get('UE_APN', 'internet')
+                
+                # Wait for uesimtun interface to be created
+                f.write(f'    # Wait for uesimtun0 interface to be created on {ue_name}\n')
+                f.write(f'    for i in range(30):\n')
+                f.write(f'        result = {ue_name}.cmd("ip link show uesimtun0 2>/dev/null")\n')
+                f.write(f'        if result and "uesimtun0" in result:\n')
+                f.write(f'            break\n')
+                f.write(f'        CLI.do_sh(net, "sleep 1")\n')
+                f.write(f'    else:\n')
+                f.write(f'        print("Warning: uesimtun0 interface not found on {ue_name}")\n')
+                f.write(f'        continue\n')
+                f.write(f'    \n')
                 
                 # Route based on APN
                 if apn == 'internet':
@@ -1786,3 +1823,230 @@ logger:
         
         debug_print("Save status check passed, proceeding with export")
         return True
+
+    def create_ue_config_files(self, config_dir, categorized_nodes):
+        """Create UE configuration files for UERANSIM."""
+        config_files_created = 0
+        
+        # Path to the 5g-configs template directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        template_config_dir = os.path.join(current_dir, "5g-configs")
+        ue_template_path = os.path.join(template_config_dir, "ue.yaml")
+        
+        for i, ue in enumerate(categorized_nodes.get('ues', []), 1):
+            ue_name = self.sanitize_variable_name(ue['name'])
+            config_file = f"{ue_name}.yaml"
+            dst_path = os.path.join(config_dir, config_file)
+            
+            # Skip if file already exists
+            if os.path.exists(dst_path):
+                debug_print(f"DEBUG: UE config file already exists: {config_file}")
+                continue
+            
+            # Get UE configuration from properties
+            from manager.configmap import ConfigurationMapper
+            props = ue.get('properties', {})
+            ue_config = ConfigurationMapper.map_ue_config(props)
+            
+            # Create UE configuration content
+            ue_config_content = self.generate_ue_config_content(ue_config, i)
+            
+            try:
+                with open(dst_path, 'w') as f:
+                    f.write(ue_config_content)
+                debug_print(f"DEBUG: Created UE config file: {config_file}")
+                config_files_created += 1
+            except Exception as e:
+                error_print(f"ERROR: Failed to create UE config file {dst_path}: {e}")
+                
+        return config_files_created
+    
+    def create_gnb_config_files(self, config_dir, categorized_nodes):
+        """Create gNB configuration files for UERANSIM."""
+        config_files_created = 0
+        
+        # Path to the 5g-configs template directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        template_config_dir = os.path.join(current_dir, "5g-configs")
+        gnb_template_path = os.path.join(template_config_dir, "gnb.yaml")
+        
+        for i, gnb in enumerate(categorized_nodes.get('gnbs', []), 1):
+            gnb_name = self.sanitize_variable_name(gnb['name'])
+            config_file = f"{gnb_name}.yaml"
+            dst_path = os.path.join(config_dir, config_file)
+            
+            # Skip if file already exists
+            if os.path.exists(dst_path):
+                debug_print(f"DEBUG: gNB config file already exists: {config_file}")
+                continue
+            
+            # Get gNB configuration from properties
+            from manager.configmap import ConfigurationMapper
+            props = gnb.get('properties', {})
+            gnb_config = ConfigurationMapper.map_gnb_config(props)
+            
+            # Create gNB configuration content
+            gnb_config_content = self.generate_gnb_config_content(gnb_config, i)
+            
+            try:
+                with open(dst_path, 'w') as f:
+                    f.write(gnb_config_content)
+                debug_print(f"DEBUG: Created gNB config file: {config_file}")
+                config_files_created += 1
+            except Exception as e:
+                error_print(f"ERROR: Failed to create gNB config file {dst_path}: {e}")
+                
+        return config_files_created
+    
+    def generate_ue_config_content(self, ue_config, ue_index):
+        """Generate UE configuration content from template."""
+        
+        # Get gNB IP - use configured IP or fallback to default
+        gnb_ip = ue_config.get('gnb_ip', '127.0.0.1')
+        
+        # If no specific gNB IP is configured, try to find a gNB in the topology
+        if gnb_ip == '127.0.0.1':
+            # This is a fallback - the actual gNB IP should be configured in the UI
+            # For now, we'll use a sensible default based on the Mininet IP range
+            gnb_ip = '10.0.0.1'  # Default gNB IP in Mininet range
+        
+        template_content = f"""# IMSI number of the UE. IMSI = [MCC|MNC|MSISDN] (In total 15 or 16 digits)
+supi: 'imsi-{ue_config.get('mcc', '999')}{ue_config.get('mnc', '70')}{ue_config.get('msisdn', f'000000000{ue_index:01d}')}'
+# Mobile Country Code value
+mcc: '{ue_config.get('mcc', '999')}'
+# Mobile Network Code value (2 or 3 digits)
+mnc: '{ue_config.get('mnc', '70')}'
+
+# Permanent subscription key
+key: '{ue_config.get('key', '465B5CE8B199B49FAA5F0A2EE238A6BC')}'
+# Operator code (OP or OPC) of the UE
+op: '{ue_config.get('op', 'E8ED289DEBA952E4283B54E88E6183CA')}'
+# This value specifies the OP type and it can be either 'OP' or 'OPC'
+opType: '{ue_config.get('op_type', 'OPC')}'
+# Authentication Management Field (AMF) value
+amf: '8000'
+# IMEI number of the device. It is used if no SUPI is provided
+imei: '{ue_config.get('imei', '356938035643803')}'
+# IMEISV number of the device. It is used if no SUPI and IMEI is provided
+imeiSv: '{ue_config.get('imeisv', '4370816125816151')}'
+
+# List of gNB IP addresses for Radio Link Simulation
+gnbSearchList:
+  - {gnb_ip}
+
+# UAC Access Identities Configuration
+uacAic:
+  mps: false
+  mcs: false
+
+# UAC Access Control Class
+uacAcc:
+  normalClass: 0
+  class11: false
+  class12: false
+  class13: false
+  class14: false
+  class15: false
+  
+# Initial PDU sessions to be established
+sessions:
+  - type: '{ue_config.get('session_type', 'IPv4')}'
+    apn: '{ue_config.get('apn', 'internet')}'
+    slice:
+      sst: {ue_config.get('sst', '1')}
+      sd: {ue_config.get('sd', '0xffffff')}
+    emergency: false
+
+# Configured NSSAI for this UE by HPLMN
+configured-nssai:
+  - sst: {ue_config.get('sst', '1')}
+    sd: {ue_config.get('sd', '0xffffff')}
+
+# Default Configured NSSAI for this UE
+default-nssai:
+  - sst: {ue_config.get('sst', '1')}
+    sd: {ue_config.get('sd', '0xffffff')}
+
+# Supported encryption algorithms by this UE
+integrity:
+  IA1: true
+  IA2: true
+  IA3: true
+
+# Supported integrity algorithms by this UE
+ciphering:
+  EA1: true
+  EA2: true
+  EA3: true
+
+# Integrity protection maximum data rate for user plane
+integrityMaxRate:
+  uplink: 'full'
+  downlink: 'full'
+"""
+        return template_content
+    
+    def generate_gnb_config_content(self, gnb_config, gnb_index):
+        """Generate gNB configuration content from template."""
+        template_content = f"""# gNB identification
+nci: {gnb_config.get('nci', '0x000000010')}
+idLength: {gnb_config.get('id_length', '32')}
+tac: {gnb_config.get('tac', '1')}
+mcc: '{gnb_config.get('mcc', '999')}'
+mnc: '{gnb_config.get('mnc', '70')}'
+
+# gNB location
+gnbSearchList: []
+
+# List of AMF addresses for Registration
+amfConfigs:
+  - address: {gnb_config.get('amf_ip', '127.0.0.1')}
+    port: {gnb_config.get('amf_port', '38412')}
+
+# List of supported S-NSSAIs by this gNB
+slices:
+  - sst: {gnb_config.get('sst', '1')}
+    sd: {gnb_config.get('sd', '0xffffff')}
+
+# Indication of ignoring stream ids of SCTP connections
+ignoreStreamIds: true
+
+# gNB NGAP bind address
+ngapIp: 0.0.0.0
+
+# gNB GTP-U bind address
+gtpIp: 0.0.0.0
+
+# Supported encryption algorithms by this gNB
+supportedEncryption:
+  - NEA0
+  - NEA1
+  - NEA2
+  - NEA3
+
+# Supported integrity algorithms by this gNB
+supportedIntegrity:
+  - NIA0
+  - NIA1
+  - NIA2
+  - NIA3
+
+# Paging DRX cycle
+pagingDrx: v32
+
+# Served cells information
+servedCells:
+  - cellId: {gnb_config.get('cell_id', '0x000000001')}
+    tac: {gnb_config.get('tac', '1')}
+    broadcastPlmns:
+      - mcc: '{gnb_config.get('mcc', '999')}'
+        mnc: '{gnb_config.get('mnc', '70')}'
+        taiSliceSupportList:
+          - sst: {gnb_config.get('sst', '1')}
+            sd: {gnb_config.get('sd', '0xffffff')}
+    nrCgi:
+      mcc: '{gnb_config.get('mcc', '999')}'
+      mnc: '{gnb_config.get('mnc', '70')}'
+      nrCellId: {gnb_config.get('cell_id', '0x000000001')}
+"""
+        return template_content

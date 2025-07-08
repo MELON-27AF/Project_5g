@@ -2,7 +2,6 @@
 
 set -eo pipefail
 
-
 # tun iface create
 function tun_create {
     echo -e "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
@@ -50,10 +49,44 @@ function tun_create {
       iptables -t nat -A POSTROUTING -s 10.52.0.0/16 ! -o ogstun4 -j MASQUERADE
     fi
 }
+
+# Handle UERANSIM commands
+function handle_ueransim {
+    case "$1" in
+        "gnb")
+            # Start gNB with configuration
+            echo "Starting UERANSIM gNB..."
+            if [ -n "$2" ]; then
+                nr-gnb -c "$2"
+            else
+                nr-gnb -c /etc/ueransim/gnb.yaml
+            fi
+            ;;
+        "ue")
+            # Start UE with configuration
+            echo "Starting UERANSIM UE..."
+            if [ -n "$2" ]; then
+                nr-ue -c "$2"
+            else
+                nr-ue -c /etc/ueransim/ue.yaml
+            fi
+            ;;
+        *)
+            echo "Unknown UERANSIM command: $1"
+            exit 1
+            ;;
+    esac
+}
  
- COMMAND=$1
+COMMAND=$1
 if [[ "$COMMAND"  == *"open5gs-pgwd" ]] || [[ "$COMMAND"  == *"open5gs-upfd" ]]; then
-tun_create
+    tun_create
+fi
+
+# Handle UERANSIM commands
+if [[ "$COMMAND" == "gnb" ]] || [[ "$COMMAND" == "ue" ]]; then
+    handle_ueransim "$@"
+    exit 0
 fi
 
 # Temporary patch to solve the case of docker internal dns not resolving "not running" container names.
@@ -67,7 +100,7 @@ if [[ "$COMMAND"  == *"open5gs-pcrfd" ]] \
     || [[ "$COMMAND"  == *"open5gs-udrd" ]] \
     || [[ "$COMMAND"  == *"open5gs-sgwcd" ]] \
     || [[ "$COMMAND"  == *"open5gs-upfd" ]]; then
-sleep 10
+    sleep 10
 fi
 
 $@

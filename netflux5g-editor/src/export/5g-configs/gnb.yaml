@@ -1,0 +1,60 @@
+# gNB identification
+nci: ${NCI}
+idLength: ${ID_LENGTH}
+tac: ${TAC}
+mcc: "${MCC}"
+mnc: "${MNC}"
+
+# gNB location
+gnbSearchList: []
+
+# List of AMF addresses for Registration
+amfConfigs:
+  - address: ${AMF_IP}
+    port: ${AMF_PORT}
+
+# List of supported S-NSSAIs by this gNB
+slices:
+  - sst: ${SST}
+    sd: ${SD}
+
+# Indication of ignoring stream ids of SCTP connections
+ignoreStreamIds: true
+
+# gNB NGAP bind address
+ngapIp: 0.0.0.0
+
+# gNB GTP-U bind address
+gtpIp: 0.0.0.0
+
+# Supported encryption algorithms by this gNB
+supportedEncryption:
+  - NEA0
+  - NEA1
+  - NEA2
+  - NEA3
+
+# Supported integrity algorithms by this gNB
+supportedIntegrity:
+  - NIA0
+  - NIA1
+  - NIA2
+  - NIA3
+
+# Paging DRX cycle
+pagingDrx: v32
+
+# Served cells information
+servedCells:
+  - cellId: ${CELL_ID}
+    tac: ${TAC}
+    broadcastPlmns:
+      - mcc: "${MCC}"
+        mnc: "${MNC}"
+        taiSliceSupportList:
+          - sst: ${SST}
+            sd: ${SD}
+    nrCgi:
+      mcc: "${MCC}"
+      mnc: "${MNC}"
+      nrCellId: ${CELL_ID}
