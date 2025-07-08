@@ -1490,6 +1490,27 @@ logger:
         # Start gNBs
         if categorized_nodes['gnbs']:
             f.write('    info("*** Post configure Docker gNB connection to AMF\\n")\n')
+            
+            # First, update gNB configurations with actual AMF IP addresses
+            core_components = categorized_nodes.get('core5g_components', {})
+            if 'AMF' in core_components and core_components['AMF']:
+                f.write('    # Update gNB configurations with actual AMF IP addresses\n')
+                amf_instance = core_components['AMF'][0]  # Use first AMF
+                amf_name = self.sanitize_variable_name(amf_instance.get('name', 'amf1'))
+                f.write(f'    amf_ip = {amf_name}.IP()\n')
+                f.write(f'    print(f"AMF {amf_name} IP: {{amf_ip}}")\n')
+                
+                # Update all gNB config files with this AMF IP
+                for gnb in categorized_nodes['gnbs']:
+                    gnb_name = self.sanitize_variable_name(gnb['name'])
+                    config_file = f"{gnb_name}.yaml"
+                    # Replace placeholder with actual AMF IP
+                    f.write(f'    result = {gnb_name}.cmd(f"sed -i \\"s/AMF_CONTAINER_IP_PLACEHOLDER/${{amf_ip}}/g\\" /config/{config_file}")\n')
+                    # Also replace any hardcoded AMF IPs
+                    f.write(f'    result = {gnb_name}.cmd(f"sed -i \\"s/172.18.0.10/${{amf_ip}}/g\\" /config/{config_file}")\n')
+                    f.write(f'    print(f"Updated {gnb_name} config with AMF IP: {{amf_ip}}")\n')
+                f.write('\n')
+            
             for gnb in categorized_nodes['gnbs']:
                 gnb_name = self.sanitize_variable_name(gnb['name'])
                 # Use specific gNB configuration file for each gNB
@@ -1522,12 +1543,12 @@ logger:
                         # Verify the change
                         f.write(f'    verify = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file}")\n')
                         f.write(f'    print(f"Verification for {ue_name}: {{verify}}")\n')
-                        f.write(f'    result = {ue_name}.cmd(f"sed -i \'s/127.0.0.1/{{gnb_ip}}/g\' /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/127.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         # Verify the change
                         f.write(f'    updated_ip = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file} | tail -1 | tr -d \' -\'")\n')
                         f.write(f'    print(f"Updated {ue_name} gNB IP to: {{updated_ip}}")\n')
                     break  # Use first gNB IP for all UEs
-                f.write('\\n')
+                f.write('\n')
             
             for ue in categorized_nodes['ues']:
                 ue_name = self.sanitize_variable_name(ue['name'])
@@ -2152,8 +2173,8 @@ servedCells:
       mcc: '{gnb_config.get('mcc', '999')}'
       mnc: '{gnb_config.get('mnc', '70')}'
       nrCellId: {gnb_config.get('cell_id', f'0x00000000{gnb_index}')}
-"""
-        return template_content
+
+# Supported encryption algorithms by this gNB
 supportedEncryption:
   - NEA0
   - NEA1
@@ -2169,21 +2190,6 @@ supportedIntegrity:
 
 # Paging DRX cycle
 pagingDrx: v32
-
-# Served cells information
-servedCells:
-  - cellId: {gnb_config.get('cell_id', '0x000000001')}
-    tac: {gnb_config.get('tac', '1')}
-    broadcastPlmns:
-      - mcc: '{gnb_config.get('mcc', '999')}'
-        mnc: '{gnb_config.get('mnc', '70')}'
-        taiSliceSupportList:
-          - sst: {gnb_config.get('sst', '1')}
-            sd: {gnb_config.get('sd', '0xffffff')}
-    nrCgi:
-      mcc: '{gnb_config.get('mcc', '999')}'
-      mnc: '{gnb_config.get('mnc', '70')}'
-      nrCellId: {gnb_config.get('cell_id', '0x000000001')}
 
 # RAN UE usage indicator
 ranUeUsageIndication: false
