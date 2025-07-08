@@ -163,9 +163,11 @@ class MininetExporter:
         f.write('"""\n\n')
 
     def write_imports(self, f, categorized_nodes):
-        """Write necessary imports based on component types following fixed_topology-upf.py pattern."""
+        """Write necessary imports with circular import avoidance strategy."""
         f.write('import sys\n')
         f.write('import os\n')
+        f.write('from subprocess import call\n')
+        f.write('\n')
         
         # Check if we need wireless functionality
         has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
@@ -175,52 +177,96 @@ class MininetExporter:
         has_docker = (categorized_nodes['docker_hosts'] or categorized_nodes['ues'] or 
                      categorized_nodes['gnbs'] or categorized_nodes['core5g'])
         
-        # Import standard Mininet components
-        f.write('from mininet.net import Mininet\n')
-        f.write('from mininet.link import TCLink, Link, Intf\n')
-        f.write('from mininet.node import RemoteController, OVSKernelSwitch, Host, Node\n')
-        f.write('from mininet.log import setLogLevel, info\n')
+        # Initialize availability flags
+        f.write('# Network capability detection\n')
+        f.write('WIFI_AVAILABLE = False\n')
+        f.write('CONTAINERNET_AVAILABLE = False\n')
+        f.write('\n')
         
-        if has_wireless:
-            # Import mininet-wifi components with compatibility handling
-            f.write('# Import mininet-wifi with compatibility handling\n')
-            f.write('try:\n')
-            f.write('    from mn_wifi.net import Mininet_wifi\n')
-            f.write('    from mn_wifi.node import Station, OVSKernelAP\n')
-            f.write('    from mn_wifi.link import wmediumd, Intf\n')
-            f.write('    from mn_wifi.wmediumdConnector import interference\n')
-            f.write('    WIFI_AVAILABLE = True\n')
-            f.write('except ImportError as e:\n')
-            f.write('    print(f"Warning: mininet-wifi import failed: {e}")\n')
-            f.write('    print("Falling back to standard Mininet for wireless components")\n')
-            f.write('    WIFI_AVAILABLE = False\n')
-            f.write('    # Use standard mininet components as fallback\n')
-            f.write('    from mininet.node import Host as Station\n')
-            f.write('    from mininet.node import OVSSwitch as OVSKernelAP\n')
-            f.write('    wmediumd = None\n')
-            f.write('    interference = None\n')
-        
+        # Import strategy to avoid circular imports
+        # Strategy 1: Try containernet first if needed (works better with existing systems)
         if has_docker:
-            # Import containernet components for Docker/5G support with compatibility handling
-            f.write('# Import containernet with compatibility handling\n')
+            f.write('# Try containernet first for Docker support\n')
             f.write('try:\n')
             f.write('    from mininet.net import Containernet\n')
             f.write('    from mininet.node import Docker\n')
+            f.write('    from mininet.node import RemoteController, OVSKernelSwitch, Host, Node\n')
+            f.write('    from mininet.log import setLogLevel, info\n')
             f.write('    from mininet.cli import CLI\n')
+            f.write('    from mininet.link import TCLink, Link, Intf\n')
             f.write('    CONTAINERNET_AVAILABLE = True\n')
+            f.write('    print("✓ containernet available - using Docker support")\n')
             f.write('except ImportError as e:\n')
             f.write('    print(f"Warning: containernet import failed: {e}")\n')
-            f.write('    print("Falling back to standard Mininet for Docker components")\n')
             f.write('    CONTAINERNET_AVAILABLE = False\n')
-            f.write('    # Use standard mininet components as fallback\n')
-            f.write('    from mininet.net import Mininet as Containernet\n')
-            f.write('    from mininet.cli import CLI\n')
-            f.write('    from mininet.node import Host as Docker\n')
-        else:
-            f.write('from mininet.cli import CLI\n')
+            f.write('\n')
         
-        f.write('from subprocess import call\n')
-        f.write('\n\n')
+        # Strategy 2: Try mininet-wifi only if containernet is not available or not needed
+        if has_wireless:
+            f.write('# Try mininet-wifi for wireless support (if containernet not available)\n')
+            f.write('if not CONTAINERNET_AVAILABLE:\n')
+            f.write('    try:\n')
+            f.write('        from mn_wifi.net import Mininet_wifi\n')
+            f.write('        from mn_wifi.node import Station, OVSKernelAP\n')
+            f.write('        from mn_wifi.link import wmediumd\n')
+            f.write('        from mn_wifi.wmediumdConnector import interference\n')
+            f.write('        from mininet.node import RemoteController, OVSKernelSwitch, Host, Node\n')
+            f.write('        from mininet.log import setLogLevel, info\n')
+            f.write('        from mininet.cli import CLI\n')
+            f.write('        from mininet.link import TCLink, Link, Intf\n')
+            f.write('        WIFI_AVAILABLE = True\n')
+            f.write('        print("✓ mininet-wifi available - using wireless support")\n')
+            f.write('    except ImportError as e:\n')
+            f.write('        print(f"Warning: mininet-wifi import failed: {e}")\n')
+            f.write('        print("Falling back to standard Mininet")\n')
+            f.write('        WIFI_AVAILABLE = False\n')
+            f.write('\n')
+        
+        # Strategy 3: Standard Mininet fallback
+        f.write('# Standard Mininet fallback (always import if others failed)\n')
+        f.write('if not CONTAINERNET_AVAILABLE and not WIFI_AVAILABLE:\n')
+        f.write('    try:\n')
+        f.write('        from mininet.net import Mininet\n')
+        f.write('        from mininet.node import RemoteController, OVSKernelSwitch, Host, Node\n')
+        f.write('        from mininet.log import setLogLevel, info\n')
+        f.write('        from mininet.cli import CLI\n')
+        f.write('        from mininet.link import TCLink, Link, Intf\n')
+        f.write('        print("✓ Using standard Mininet")\n')
+        f.write('    except ImportError as e:\n')
+        f.write('        print(f"ERROR: Cannot import any Mininet variant: {e}")\n')
+        f.write('        sys.exit(1)\n')
+        f.write('\n')
+        
+        # Define fallback classes for missing components
+        if has_wireless:
+            f.write('# Define fallback classes for wireless components\n')
+            f.write('if not WIFI_AVAILABLE:\n')
+            f.write('    # Create fallback classes when mininet-wifi is not available\n')
+            f.write('    Station = Host  # Use Host as Station fallback\n')
+            f.write('    OVSKernelAP = OVSKernelSwitch  # Use OVSSwitch as AP fallback\n')
+            f.write('    wmediumd = None\n')
+            f.write('    interference = None\n')
+            f.write('\n')
+        
+        if has_docker:
+            f.write('# Define fallback classes for Docker components\n')
+            f.write('if not CONTAINERNET_AVAILABLE:\n')
+            f.write('    # Create fallback classes when containernet is not available\n')
+            f.write('    Docker = Host  # Use Host as Docker fallback\n')
+            f.write('    \n')
+            f.write('    class Containernet(Mininet):\n')
+            f.write('        """Fallback Containernet class using standard Mininet"""\n')
+            f.write('        def addDocker(self, name, **kwargs):\n')
+            f.write('            """Fallback addDocker method"""\n')
+            f.write('            # Filter out Docker-specific parameters\n')
+            f.write('            filtered_kwargs = {}\n')
+            f.write('            for key, value in kwargs.items():\n')
+            f.write('                if key not in ["dimage", "dcmd", "network_mode", "cap_add", \n')
+            f.write('                               "devices", "privileged", "publish_all_ports", \n')
+            f.write('                               "volumes", "environment"]:\n')
+            f.write('                    filtered_kwargs[key] = value\n')
+            f.write('            return self.addHost(name, cls=Host, **filtered_kwargs)\n')
+            f.write('\n')
 
     def write_utility_functions(self, f):
         """Write utility functions for the script."""
@@ -1312,17 +1358,26 @@ logger:
         
         f.write('\n')
         f.write('    info("*** Configuring Propagation Model\\n")\n')
-        f.write('    net.setPropagationModel(model="logDistance", exp=3)\n\n')
+        f.write('    if WIFI_AVAILABLE:\n')
+        f.write('        net.setPropagationModel(model="logDistance", exp=3)\n')
+        f.write('    else:\n')
+        f.write('        print("Propagation model not available in standard Mininet")\n\n')
         
         f.write('    info("*** Configuring WiFi nodes\\n")\n')
-        f.write('    net.configureWifiNodes()\n\n')
+        f.write('    if WIFI_AVAILABLE:\n')
+        f.write('        net.configureWifiNodes()\n')
+        f.write('    else:\n')
+        f.write('        print("WiFi node configuration not available in standard Mininet")\n\n')
         
         # Add links section
         f.write('    info("*** Add links\\n")\n')
         # This will be filled by the write_links method
         
         # Add plot graph
-        f.write('    net.plotGraph(max_x=1000, max_y=1000)\n\n')
+        f.write('    if WIFI_AVAILABLE:\n')
+        f.write('        net.plotGraph(max_x=1000, max_y=1000)\n')
+        f.write('    else:\n')
+        f.write('        print("Plot graph not available in standard Mininet")\n\n')
         
         f.write('    info("*** Starting network\\n")\n')
         f.write('    net.build()\n\n')
