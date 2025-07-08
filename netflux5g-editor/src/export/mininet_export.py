@@ -271,49 +271,44 @@ class MininetExporter:
         f.write('        return net.addHost(node_name, **filtered_kwargs)\n\n')
         
         # Add Docker network utility functions if needed
+        network_name = None
         if hasattr(self.main_window, 'docker_network_manager'):
             network_name = self.main_window.docker_network_manager.get_current_network_name()
-            if network_name:
-                f.write('def check_docker_network():\n')
-                f.write('    """Check if the required Docker network exists."""\n')
-                f.write('    import subprocess\n')
-                f.write(f'    network_name = "{network_name}"\n')
-                f.write('    try:\n')
-                f.write('        result = subprocess.run(\n')
-                f.write('            ["docker", "network", "ls", "--filter", f"name={network_name}", "--format", "{{.Name}}"],\n')
-                f.write('            capture_output=True, text=True, timeout=10\n')
-                f.write('        )\n')
-                f.write('        if result.returncode == 0:\n')
-                f.write('            networks = result.stdout.strip().split(\'\\n\')\n')
-                f.write('            return network_name in networks\n')
-                f.write('        return False\n')
-                f.write('    except Exception:\n')
-                f.write('        return False\n\n')
-                
-                f.write('def create_docker_network_if_needed():\n')
-                f.write('    """Create Docker network if it doesn\'t exist."""\n')
-                f.write('    import subprocess\n')
-                f.write(f'    network_name = "{network_name}"\n')
-                f.write('    \n')
-                f.write('    if check_docker_network():\n')
-                f.write('        print(f"Docker network \'{network_name}\' already exists")\n')
-                f.write('        return True\n')
-                f.write('    \n')
-                f.write('    print(f"Creating Docker network: {network_name}")\n')
-                f.write('    try:\n')
-                f.write('        result = subprocess.run(\n')
-                f.write('            ["docker", "network", "create", "--driver", "bridge", "--attachable", network_name],\n')
-                f.write('            capture_output=True, text=True, timeout=30\n')
-                f.write('        )\n')
-                f.write('        if result.returncode == 0:\n')
-                f.write('            print(f"Successfully created Docker network: {network_name}")\n')
-                f.write('            return True\n')
-                f.write('        else:\n')
-                f.write('            print(f"Failed to create Docker network: {result.stderr}")\n')
-                f.write('            return False\n')
-                f.write('    except Exception as e:\n')
-                f.write('        print(f"Error creating Docker network: {e}")\n')
-                f.write('        return False\n\n')
+        
+        if not network_name:
+            network_name = "open5gs-ueransim_default"  # fallback network name
+            
+        f.write('def create_docker_network_if_needed():\n')
+        f.write('    """Create Docker network if it doesn\'t exist."""\n')
+        f.write('    import subprocess\n')
+        f.write(f'    network_name = "{network_name}"\n')
+        f.write('    \n')
+        f.write('    try:\n')
+        f.write('        # Check if network exists\n')
+        f.write('        result = subprocess.run(["docker", "network", "ls", "--filter", f"name=^{network_name}$", "--format", "{{.Name}}"],\n')
+        f.write('                              capture_output=True, text=True, check=True)\n')
+        f.write('        \n')
+        f.write('        existing_networks = result.stdout.strip().split("\\n")\n')
+        f.write('        if network_name not in existing_networks or not result.stdout.strip():\n')
+        f.write('            print(f"*** Creating Docker network: {network_name}")\n')
+        f.write('            create_result = subprocess.run(["docker", "network", "create", "--driver", "bridge", "--attachable", network_name], \n')
+        f.write('                                         capture_output=True, text=True, check=True)\n')
+        f.write('            print(f"*** Docker network {network_name} created successfully")\n')
+        f.write('        else:\n')
+        f.write(f'            print(f"*** Using existing Docker network: {network_name}")\n')
+        f.write('    except subprocess.CalledProcessError as e:\n')
+        f.write('        print(f"Warning: Error managing Docker network: {e}")\n')
+        f.write('        if e.stderr:\n')
+        f.write('            print(f"Error details: {e.stderr}")\n')
+        f.write('        print("Note: Containers may fail to start if network is not available")\n')
+        f.write('    except FileNotFoundError:\n')
+        f.write('        print("Warning: Docker command not found. Please ensure Docker is installed and running.")\n')
+        f.write('        print("Note: Containers may fail to start if Docker is not available")\n')
+        f.write('\n')
+        
+
+        
+
 
     def create_config_files(self, script_path, categorized_nodes):
         """Create config directory and generate/copy necessary config files for 5G components."""
