@@ -16,6 +16,7 @@ the mininet-wifi examples structure.
 
 import os
 import re
+import shutil
 import traceback
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtCore import QDateTime
@@ -66,6 +67,10 @@ class MininetExporter:
         try:
             with open(filename, "w") as f:
                 self.write_mininet_script(f, nodes, links, categorized_nodes)
+            
+            # Create config files for 5G components
+            if categorized_nodes.get('core5g') or categorized_nodes.get('core5g_components'):
+                self.create_config_files(filename, categorized_nodes)
             
             self.main_window.showCanvasStatus(f"Exported topology to {os.path.basename(filename)}")
             debug_print(f"DEBUG: Exported {len(nodes)} nodes and {len(links)} links to {filename}")
@@ -309,6 +314,118 @@ class MininetExporter:
                 f.write('    except Exception as e:\n')
                 f.write('        print(f"Error creating Docker network: {e}")\n')
                 f.write('        return False\n\n')
+
+    def create_config_files(self, script_path, categorized_nodes):
+        """Create config directory and generate/copy necessary config files for 5G components."""
+        script_dir = os.path.dirname(script_path)
+        config_dir = os.path.join(script_dir, "config")
+        
+        # Create config directory if it doesn't exist
+        os.makedirs(config_dir, exist_ok=True)
+        debug_print(f"DEBUG: Created config directory: {config_dir}")
+        
+        # Path to the 5g-configs template directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        template_config_dir = os.path.join(current_dir, "5g-configs")
+        
+        # Collect required config files from 5G components
+        config_files_created = 0
+        
+        # Check VGcore components for required configs
+        for vgcore_node in categorized_nodes.get('core5g', []):
+            components = categorized_nodes.get('core5g_components', {})
+            for comp_type, comp_list in components.items():
+                for component in comp_list:
+                    config_file = component.get('config_file', f'{comp_type.lower()}.yaml')
+                    dst_path = os.path.join(config_dir, config_file)
+                    
+                    # Check if destination exists and handle accordingly
+                    if os.path.exists(dst_path):
+                        if os.path.isdir(dst_path):
+                            # Remove directory that should be a file
+                            warning_print(f"WARNING: Removing directory that should be a file: {dst_path}")
+                            shutil.rmtree(dst_path)
+                        elif os.path.isfile(dst_path):
+                            debug_print(f"DEBUG: Config file already exists: {config_file}")
+                            continue
+                    
+                    # Check if component has imported config content
+                    if component.get('imported') and component.get('config_content'):
+                        self.write_imported_config(dst_path, component.get('config_content'))
+                        debug_print(f"DEBUG: Created config from imported content: {config_file}")
+                        config_files_created += 1
+                    # Check if there's a config file path to copy from
+                    elif component.get('config_file_path') and os.path.isfile(component.get('config_file_path')):
+                        src_path = component.get('config_file_path')
+                        shutil.copy2(src_path, dst_path)
+                        debug_print(f"DEBUG: Copied config from path: {config_file}")
+                        config_files_created += 1
+                    # Try to copy from template directory
+                    elif os.path.exists(template_config_dir):
+                        src_path = os.path.join(template_config_dir, config_file)
+                        if os.path.isfile(src_path):
+                            shutil.copy2(src_path, dst_path)
+                            debug_print(f"DEBUG: Copied config from template: {config_file}")
+                            config_files_created += 1
+                        else:
+                            # Create a basic config file if template doesn't exist
+                            self.create_basic_config_file(dst_path, config_file)
+                            debug_print(f"DEBUG: Created basic config file: {config_file}")
+                            config_files_created += 1
+                    else:
+                        # Create a basic config file as fallback
+                        self.create_basic_config_file(dst_path, config_file)
+                        debug_print(f"DEBUG: Created basic config file (fallback): {config_file}")
+                        config_files_created += 1
+        
+        if config_files_created > 0:
+            debug_print(f"DEBUG: Successfully created {config_files_created} config files")
+        else:
+            debug_print("DEBUG: No config files needed or found")
+    
+    def write_imported_config(self, file_path, config_content):
+        """Write imported config content to a file."""
+        try:
+            if isinstance(config_content, dict):
+                # If it's a dict, convert to YAML format
+                import yaml
+                with open(file_path, 'w') as f:
+                    yaml.dump(config_content, f, default_flow_style=False)
+            else:
+                # If it's already a string, write directly
+                with open(file_path, 'w') as f:
+                    f.write(str(config_content))
+        except Exception as e:
+            error_print(f"ERROR: Failed to write imported config to {file_path}: {e}")
+            # Fall back to creating a basic config
+            self.create_basic_config_file(file_path, os.path.basename(file_path))
+    
+    def create_basic_config_file(self, file_path, config_name):
+        """Create a basic config file if template is missing."""
+        component_type = config_name.replace('.yaml', '')
+        
+        basic_config = f"""# Basic {component_type.upper()} Configuration
+# Generated by NetFlux5G
+# This is a minimal configuration - customize as needed
+
+db_uri: mongodb://mongodb:27017/open5gs
+logger:
+  level: info
+
+{component_type}:
+  sbi:
+    - addr: 0.0.0.0
+      port: 7777
+  default:
+    tac: 1
+"""
+        
+        try:
+            with open(file_path, 'w') as f:
+                f.write(basic_config)
+            debug_print(f"DEBUG: Created basic config file: {file_path}")
+        except Exception as e:
+            error_print(f"ERROR: Failed to create basic config file {file_path}: {e}")
 
     def write_topology_function(self, f, nodes, links, categorized_nodes):
         """Write the main topology function following mininet-wifi patterns.
