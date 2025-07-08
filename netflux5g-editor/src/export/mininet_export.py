@@ -514,6 +514,8 @@ logger:
         """
         f.write('def topology(args):\n')
         f.write('    """Create network topology."""\n')
+        f.write('    import os\n')
+        f.write('    cwd = os.getcwd()  # Current Working Directory\n\n')
         
         # Get dynamic network name for 5G components
         dynamic_network_name = None
@@ -541,6 +543,20 @@ logger:
             f.write(f'    # Default network mode when no file is loaded\n')
             f.write(f'    NETWORK_MODE = "open5gs-ueransim_default"\n')
             f.write(f'    info(f"*** Using default Docker network: {{NETWORK_MODE}}\\n")\n')
+        f.write('    \n')
+        
+        # Create necessary directories
+        f.write('    # Create config and logging directories if they don\'t exist\n')
+        f.write('    os.makedirs(os.path.join(cwd, "config"), exist_ok=True)\n')
+        f.write('    os.makedirs(os.path.join(cwd, "logging"), exist_ok=True)\n\n')
+        
+        # Add debug function
+        f.write('    def debug_node_interfaces():\n')
+        f.write('        """Debug function to check node interfaces"""\n')
+        f.write('        print("\\n=== Node Interface Debug ===")\n')
+        f.write('        for node in net.values():\n')
+        f.write('            if hasattr(node, "name"):\n')
+        f.write('                print(f"{node.name}: {list(node.intfNames())}")\n')
         f.write('    \n')
         
         # Initialize network
@@ -574,16 +590,49 @@ logger:
         f.write('    info("*** Creating links\\n")\n')
         self.write_links(f, links, categorized_nodes)
         
+        # Add default links for 5G components if no links are defined
+        if not links and (categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']):
+            f.write('    # Add default connectivity for 5G components\n')
+            f.write('    # Create a default switch for connectivity\n')
+            f.write('    if not any(categorized_nodes.get(t) for t in ["aps", "switches"]):\n')
+            f.write('        default_switch = net.addSwitch("s1", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
+            
+            # Connect all 5G core components to the switch
+            core_components = categorized_nodes.get('core5g_components', {})
+            all_core_names = []
+            for comp_type, components in core_components.items():
+                for component in components:
+                    comp_name = self.sanitize_variable_name(component.get('name', f'{comp_type.lower()}1'))
+                    all_core_names.append(comp_name)
+            
+            for comp_name in all_core_names:
+                f.write(f'        if "{comp_name}" in locals(): net.addLink(default_switch, {comp_name})\n')
+            
+            # Connect gNBs to the switch
+            for gnb in categorized_nodes['gnbs']:
+                gnb_name = self.sanitize_variable_name(gnb['name'])
+                f.write(f'        if "{gnb_name}" in locals(): net.addLink(default_switch, {gnb_name})\n')
+            
+            # Connect UEs to the switch  
+            for ue in categorized_nodes['ues']:
+                ue_name = self.sanitize_variable_name(ue['name'])
+                f.write(f'        if "{ue_name}" in locals(): net.addLink(default_switch, {ue_name})\n')
+            f.write('\n')
+        
         # Add plot for wireless networks
         self.write_plot_graph(f, categorized_nodes)
         
         # Start network
         f.write('    info("*** Starting network\\n")\n')
         f.write('    net.build()\n')
+        f.write('    \n')
+        f.write('    # Debug: Check node interfaces after build\n')
+        f.write('    debug_node_interfaces()\n')
+        f.write('    \n')
         self.write_controller_startup(f, categorized_nodes)
         self.write_ap_startup(f, categorized_nodes)
         
-        # Start 5G components
+        # Start 5G components (without rebuilding network)
         self.write_5g_startup(f, categorized_nodes)
         
         # CLI and cleanup
@@ -1297,13 +1346,6 @@ logger:
             }
         }
         
-        # Add working directory variable
-        f.write('    cwd = os.getcwd()  # Current Working Directory\n\n')
-        
-        # Create logging directory if it doesn't exist
-        f.write('    # Create logging directory for container logs\n')
-        f.write('    os.makedirs(os.path.join(cwd, "logging"), exist_ok=True)\n\n')
-        
         # Generate code for each 5G core component type
         for comp_type, components in core_components.items():
             if components:
@@ -1370,69 +1412,6 @@ logger:
             
         # Get core components for startup sequence
         core_components = categorized_nodes.get('core5g_components', {})
-        
-        # Add network configuration commands
-        f.write('    info("*** Connecting Docker nodes to APs\\n")\n')
-        f.write('    # Connect components to their respective access points\n')
-        
-        # Connect UEs to APs (example pattern)
-        for i, ue in enumerate(categorized_nodes['ues'], 1):
-            ue_name = self.sanitize_variable_name(ue['name'])
-            # Default AP connection - can be customized based on UI configuration
-            ap_name = 'ap1-ssid'  # This should be determined from topology links
-            f.write(f'    {ue_name}.cmd("iw dev {ue_name}-wlan0 connect {ap_name}")\n')
-        
-        f.write('\n')
-        f.write('    info("*** Configuring Propagation Model\\n")\n')
-        f.write('    if WIFI_AVAILABLE:\n')
-        f.write('        net.setPropagationModel(model="logDistance", exp=3)\n')
-        f.write('    else:\n')
-        f.write('        print("Propagation model not available in standard Mininet")\n\n')
-        
-        f.write('    info("*** Configuring WiFi nodes\\n")\n')
-        f.write('    if WIFI_AVAILABLE:\n')
-        f.write('        net.configureWifiNodes()\n')
-        f.write('    else:\n')
-        f.write('        print("WiFi node configuration not available in standard Mininet")\n\n')
-        
-        # Add links section
-        f.write('    info("*** Add links\\n")\n')
-        # This will be filled by the write_links method
-        
-        # Add plot graph
-        f.write('    if WIFI_AVAILABLE:\n')
-        f.write('        net.plotGraph(max_x=1000, max_y=1000)\n')
-        f.write('    else:\n')
-        f.write('        print("Plot graph not available in standard Mininet")\n\n')
-        
-        f.write('    info("*** Starting network\\n")\n')
-        f.write('    net.build()\n\n')
-        
-        # Start controllers
-        f.write('    info("*** Starting controllers\\n")\n')
-        if categorized_nodes['controllers']:
-            for controller in categorized_nodes['controllers']:
-                ctrl_name = self.sanitize_variable_name(controller['name'])
-                f.write(f'    {ctrl_name}.start()\n')
-        else:
-            f.write('    c0.start()\n')
-        f.write('\n')
-        
-        # Start APs
-        f.write('    info("*** Starting APs\\n")\n')
-        controller_name = 'c0'
-        if categorized_nodes['controllers']:
-            controller_name = self.sanitize_variable_name(categorized_nodes['controllers'][0]['name'])
-            
-        for ap in categorized_nodes['aps']:
-            ap_name = self.sanitize_variable_name(ap['name'])
-            f.write(f'    net.get("{ap_name}").start([{controller_name}])\n')
-            
-        # Start switches
-        for switch in categorized_nodes['switches']:
-            switch_name = self.sanitize_variable_name(switch['name'])
-            f.write(f'    net.get("{switch_name}").start([{controller_name}])\n')
-        f.write('\n')
         
         # Add capture script execution like in original
         f.write('    info("*** Capture all initialization flow and slice packet\\n")\n')
