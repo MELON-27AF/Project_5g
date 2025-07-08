@@ -864,6 +864,10 @@ class MininetExporter:
             'SCP': {
                 'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
                 'default_config': 'scp.yaml',
+                'startup_cmd': 'open5gs-scpd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
                 'env_vars': {
                     'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
                     'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')

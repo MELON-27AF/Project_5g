@@ -169,6 +169,37 @@ class AutomationRunner(QObject):
         os.chmod(self.mininet_script_path, 0o755)
         debug_print(f"Mininet script generated at: {self.mininet_script_path}")
     
+    def _start_docker_services(self):
+        """Start Docker services required for the topology."""
+        try:
+            # Ensure Docker is running
+            result = subprocess.run(["docker", "info"], capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception("Docker is not running or not accessible")
+            
+            # Ensure Docker network exists
+            self._ensure_docker_network()
+            
+            debug_print("Docker services initialization complete")
+            
+        except subprocess.CalledProcessError as e:
+            error_print(f"Failed to start Docker services: {e}")
+            raise Exception(f"Failed to start Docker services: {e}")
+        except Exception as e:
+            error_print(f"Error starting Docker services: {e}")
+            raise
+    
+    def _wait_for_services(self):
+        """Wait for services to be ready."""
+        try:
+            # Give services time to initialize
+            time.sleep(2)
+            debug_print("Services initialization wait complete")
+            
+        except Exception as e:
+            error_print(f"Error waiting for services: {e}")
+            raise
+    
     def _start_mininet(self):
         """Start Mininet in a new terminal."""
         if not self.mininet_script_path:
