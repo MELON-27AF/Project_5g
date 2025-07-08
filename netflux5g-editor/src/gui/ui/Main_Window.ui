@@ -1,0 +1,494 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1314</width>
+    <height>935</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="mouseTracking">
+   <bool>true</bool>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <property name="autoFillBackground">
+   <bool>true</bool>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QWidget" name="horizontalLayoutWidget">
+    <property name="geometry">
+     <rect>
+      <x>60</x>
+      <y>0</y>
+      <width>1251</width>
+      <height>871</height>
+     </rect>
+    </property>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <property name="spacing">
+      <number>0</number>
+     </property>
+     <property name="sizeConstraint">
+      <enum>QLayout::SetNoConstraint</enum>
+     </property>
+    </layout>
+   </widget>
+   <widget class="QFrame" name="ObjectFrame">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>0</y>
+      <width>61</width>
+      <height>871</height>
+     </rect>
+    </property>
+    <property name="sizePolicy">
+     <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
+      <horstretch>0</horstretch>
+      <verstretch>0</verstretch>
+     </sizepolicy>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">
+QFrame {
+	background-color: rgb(236, 236, 236);
+   border: 2px solid lightgrey;
+}
+</string>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::StyledPanel</enum>
+    </property>
+    <property name="frameShadow">
+     <enum>QFrame::Raised</enum>
+    </property>
+    <widget class="QWidget" name="verticalLayoutWidget">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>0</y>
+       <width>61</width>
+       <height>871</height>
+      </rect>
+     </property>
+     <layout class="QVBoxLayout" name="ObjectLayout"/>
+    </widget>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1314</width>
+     <height>22</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>File</string>
+    </property>
+    <addaction name="actionNew"/>
+    <addaction name="actionOpen"/>
+    <addaction name="actionSave"/>
+    <addaction name="actionSave_As"/>
+    <addaction name="actionExport_to_Level_2_Script"/>
+    <addaction name="separator"/>
+    <addaction name="actionQuit"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>Edit</string>
+    </property>
+    <addaction name="actionCut"/>
+    <addaction name="actionCopy"/>
+    <addaction name="actionPaste"/>
+   </widget>
+   <widget class="QMenu" name="menuRun">
+    <property name="title">
+     <string>Run</string>
+    </property>
+    <addaction name="separator"/>
+    <addaction name="actionRun_All"/>
+    <addaction name="separator"/>
+    <addaction name="actionCreate_Docker_Network"/>
+    <addaction name="actionDelete_Docker_Network"/>
+    <addaction name="separator"/>
+    <addaction name="actionRun"/>
+    <addaction name="actionDeploy_Database"/>
+    <addaction name="actionDeploy_User_Manager"/>
+    <addaction name="actionDeploy_Monitoring"/>
+    <addaction name="separator"/>
+    <addaction name="actionStop_All"/>
+    <addaction name="separator"/>
+    <addaction name="actionStop"/>
+    <addaction name="actionStop_Database"/>
+    <addaction name="actionStop_User_Manager"/>
+    <addaction name="actionStop_Monitoring"/>
+    <addaction name="separator"/>
+    <addaction name="actionClear_All_Data"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>Help</string>
+    </property>
+    <addaction name="actionAbout_NetFlux5G"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuRun"/>
+   <addaction name="menuHelp"/>
+  </widget>
+  <widget class="QToolBar" name="toolBar">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <property name="layoutDirection">
+    <enum>Qt::LeftToRight</enum>
+   </property>
+   <property name="movable">
+    <bool>false</bool>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionPickTool"/>
+   <addaction name="actionLinkTool"/>
+   <addaction name="actionDelete"/>
+   <addaction name="separator"/>
+   <addaction name="actionZoomIn"/>
+   <addaction name="actionZoomOut"/>
+   <addaction name="actionResetZoom"/>
+   <addaction name="actionShowGrid"/>
+   <addaction name="separator"/>
+   <addaction name="actionRunAll"/>
+   <addaction name="actionStopAll"/>
+  </widget>
+  <action name="actionNew">
+   <property name="text">
+    <string>New</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
+   </property>
+  </action>
+  <action name="actionOpen">
+   <property name="text">
+    <string>Open</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="actionSave">
+   <property name="text">
+    <string>Save</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
+  </action>
+  <action name="actionExport_to_Level_2_Script">
+   <property name="text">
+    <string>Export to Mininet Script</string>
+   </property>
+  </action>
+  <action name="actionQuit">
+   <property name="text">
+    <string>Quit</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Q</string>
+   </property>
+  </action>
+  <action name="actionCut">
+   <property name="text">
+    <string>Cut</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+X</string>
+   </property>
+  </action>
+  <action name="actionPreference">
+   <property name="text">
+    <string>Preference</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+P</string>
+   </property>
+  </action>
+  <action name="actionRun">
+   <property name="text">
+    <string>Run Topology</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
+   </property>
+  </action>
+  <action name="actionStop">
+   <property name="text">
+    <string>Stop Topology</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+T</string>
+   </property>
+  </action>
+  <action name="actionAbout_NetFlux5G">
+   <property name="text">
+    <string>About NetFlux5G</string>
+   </property>
+  </action>
+  <action name="actionCopy">
+   <property name="text">
+    <string>Copy</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+C</string>
+   </property>
+  </action>
+  <action name="actionPaste">
+   <property name="text">
+    <string>Paste</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+V</string>
+   </property>
+  </action>
+  <action name="actionSave_As">
+   <property name="text">
+    <string>Save As</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+S</string>
+   </property>
+  </action>
+  <action name="actionPickTool">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/cursor.webp</normaloff>../Icon/cursor.webp</iconset>
+   </property>
+   <property name="text">
+    <string>Pick Tool</string>
+   </property>
+  </action>
+  <action name="actionLinkTool">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/link cable.png</normaloff>../Icon/link cable.png</iconset>
+   </property>
+   <property name="text">
+    <string>Link Tool</string>
+   </property>
+   <property name="toolTip">
+    <string>Link Tool - Connect components (L)</string>
+   </property>
+   <property name="shortcut">
+    <string>L</string>
+   </property>
+  </action>
+  <action name="actionHandTool">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/handTool.png</normaloff>../Icon/handTool.png</iconset>
+   </property>
+   <property name="text">
+    <string>Hand Tool</string>
+   </property>
+  </action>
+  <action name="actionDelete">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/delete.png</normaloff>../Icon/delete.png</iconset>
+   </property>
+   <property name="text">
+    <string>Delete</string>
+   </property>
+  </action>
+  <action name="actionTextBox">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/textBox.png</normaloff>../Icon/textBox.png</iconset>
+   </property>
+   <property name="text">
+    <string>Text Box</string>
+   </property>
+  </action>
+  <action name="actionDrawSquare">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/drawSquare.png</normaloff>../Icon/drawSquare.png</iconset>
+   </property>
+   <property name="text">
+    <string>Draw Square</string>
+   </property>
+  </action>
+  <action name="actionShowGrid">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/grid.png</normaloff>../Icon/grid.png</iconset>
+   </property>
+   <property name="text">
+    <string>Show Grid</string>
+   </property>
+  </action>
+  <action name="actionZoomIn">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/zoomIn.png</normaloff>../Icon/zoomIn.png</iconset>
+   </property>
+   <property name="text">
+    <string>Zoom In</string>
+   </property>
+  </action>
+  <action name="actionZoomOut">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/zoomOut.png</normaloff>../Icon/zoomOut.png</iconset>
+   </property>
+   <property name="text">
+    <string>Zoom Out</string>
+   </property>
+  </action>
+  <action name="actionResetZoom">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/resetZoom.png</normaloff>../Icon/resetZoom.png</iconset>
+   </property>
+   <property name="text">
+    <string>Reset Zoom</string>
+   </property>
+  </action>
+  <action name="actionRunAll">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/RunAll.png</normaloff>../Icon/RunAll.png</iconset>
+   </property>
+   <property name="text">
+    <string>RunAll</string>
+   </property>
+  </action>
+  <action name="actionStopAll">
+   <property name="icon">
+    <iconset>
+     <normaloff>../Icon/StopAll.png</normaloff>../Icon/StopAll.png</iconset>
+   </property>
+   <property name="text">
+    <string>StopAll</string>
+   </property>
+  </action>
+  <action name="actionDeploy_Database">
+   <property name="text">
+    <string>Deploy Database</string>
+   </property>
+  </action>
+  <action name="actionDeploy_User_Manager">
+   <property name="text">
+    <string>Deploy User Manager</string>
+   </property>
+  </action>
+  <action name="actionStop_Database">
+   <property name="text">
+    <string>Stop Database</string>
+   </property>
+  </action>
+  <action name="actionStop_User_Manager">
+   <property name="text">
+    <string>Stop User Manager</string>
+   </property>
+  </action>
+  <action name="actionClear_All_Data">
+   <property name="text">
+    <string>Clear All Data</string>
+   </property>
+  </action>
+  <action name="actionDeploy_Monitoring">
+   <property name="text">
+    <string>Deploy Monitoring</string>
+   </property>
+  </action>
+  <action name="actionStop_Monitoring">
+   <property name="text">
+    <string>Stop Monitoring</string>
+   </property>
+  </action>
+  <action name="actionRun_All">
+   <property name="text">
+    <string>Run All</string>
+   </property>
+   <property name="font">
+    <font>
+     <bold>true</bold>
+    </font>
+   </property>
+  </action>
+  <action name="actionStop_All">
+   <property name="text">
+    <string>Stop All</string>
+   </property>
+   <property name="font">
+    <font>
+     <bold>true</bold>
+    </font>
+   </property>
+  </action>
+  <action name="actionCreate_Docker_Network">
+   <property name="text">
+    <string>Create Docker Network</string>
+   </property>
+   <property name="toolTip">
+    <string>Create a Docker network for the current topology (Ctrl+Shift+C)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+C</string>
+   </property>
+  </action>
+  <action name="actionDelete_Docker_Network">
+   <property name="text">
+    <string>Delete Docker Network</string>
+   </property>
+   <property name="toolTip">
+    <string>Delete the Docker network for the current topology (Ctrl+Shift+X)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+X</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

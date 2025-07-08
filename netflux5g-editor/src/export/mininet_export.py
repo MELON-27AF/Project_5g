@@ -1,0 +1,1408 @@
+"""
+Enhanced Mininet-WiFi Export with Dynamic UI Configuration Support
+
+This module generates working mininet-wifi scripts that dynamically use the properties
+configured in the NetFlux5G UI. It supports:
+
+- Standard mininet-wifi components (APs, STAs, Hosts)
+- 5G components (gNBs, UEs with UERANSIM integration)
+- Docker containers for 5G core functions
+- Dynamic property mapping from UI to script parameters
+- Proper mininet-wifi/containernet integration
+
+The generated scripts follow mininet-wifi best practices and are compatible with
+the mininet-wifi examples structure.
+"""
+
+import os
+import re
+import traceback
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
+from PyQt5.QtCore import QDateTime
+from manager.configmap import ConfigurationMapper
+from manager.debug import debug_print, error_print, warning_print
+
+class MininetExporter:
+    """Handler for exporting network topology to Mininet scripts with Level 2 features."""
+    
+    def __init__(self, main_window):
+        self.main_window = main_window
+        
+    def export_to_mininet(self, skip_save_check=False):
+        """Export the current topology to a Mininet script.
+        
+        This method first checks if there are unsaved changes or if the topology
+        hasn't been saved to a file yet. If so, it prompts the user to save first
+        to ensure proper Docker network naming and configuration consistency.
+        
+        Args:
+            skip_save_check (bool): If True, skip the unsaved changes check.
+                                   Useful for automated exports.
+        """
+        # Check for unsaved changes or unsaved file (unless skipped)
+        if not skip_save_check and not self._check_save_status():
+            return  # User cancelled or chose not to proceed
+        
+        filename, _ = QFileDialog.getSaveFileName(
+            self.main_window, 
+            "Export to Mininet Script", 
+            "", 
+            "Python Files (*.py);;All Files (*)"
+        )
+        if filename:
+            self.export_to_mininet_script(filename)
+
+    def export_to_mininet_script(self, filename):
+        """Export the current topology to a working Mininet-WiFi Python script."""
+        nodes, links = self.main_window.extractTopology()
+        
+        if not nodes:
+            self.main_window.showCanvasStatus("No components found to export!")
+            return
+        
+        # Categorize nodes by type for proper script generation
+        categorized_nodes = self.categorize_nodes(nodes)
+        
+        try:
+            with open(filename, "w") as f:
+                self.write_mininet_script(f, nodes, links, categorized_nodes)
+            
+            self.main_window.showCanvasStatus(f"Exported topology to {os.path.basename(filename)}")
+            debug_print(f"DEBUG: Exported {len(nodes)} nodes and {len(links)} links to {filename}")
+            
+        except Exception as e:
+            error_msg = f"Error exporting to Mininet: {str(e)}"
+            self.main_window.showCanvasStatus(error_msg)
+            error_print(f"ERROR: {error_msg}")
+            traceback.print_exc()
+
+    def categorize_nodes(self, nodes):
+        """Categorize nodes by type for proper script generation."""
+        categorized = {
+            'hosts': [n for n in nodes if n['type'] in ['Host']],
+            'stas': [n for n in nodes if n['type'] == 'STA'],
+            'ues': [n for n in nodes if n['type'] == 'UE'],
+            'gnbs': [n for n in nodes if n['type'] == 'GNB'],
+            'aps': [n for n in nodes if n['type'] == 'AP'],
+            'switches': [n for n in nodes if n['type'] in ['Switch', 'Router']],
+            'controllers': [n for n in nodes if n['type'] == 'Controller'],
+            'docker_hosts': [n for n in nodes if n['type'] == 'DockerHost'],
+            'core5g': [n for n in nodes if n['type'] == 'VGcore']
+        }
+        
+        # Extract 5G core components from VGcore configurations
+        categorized['core5g_components'] = self.extract_5g_components_by_type(categorized['core5g'])
+        
+        return categorized
+
+    def write_mininet_script(self, f, nodes, links, categorized_nodes):
+        """Write the complete Mininet-WiFi script following best practices."""
+        # Write script header
+        self.write_script_header(f)
+        
+        # Write imports based on components used
+        self.write_imports(f, categorized_nodes)
+        
+        # Write utility functions
+        self.write_utility_functions(f)
+        
+        # Write topology function
+        self.write_topology_function(f, nodes, links, categorized_nodes)
+        
+        # Write main execution
+        self.write_main_execution(f)
+
+    def write_script_header(self, f):
+        """Write the script header with metadata."""
+        f.write('#!/usr/bin/env python\n\n')
+        f.write('"""\n')
+        f.write('NetFlux5G - Mininet-WiFi Topology\n')
+        f.write('Generated by NetFlux5G Editor\n')
+        f.write(f'Generated on: {QDateTime.currentDateTime().toString()}\n')
+        
+        # Add Docker network information if available
+        if hasattr(self.main_window, 'docker_network_manager'):
+            network_name = self.main_window.docker_network_manager.get_current_network_name()
+            if network_name:
+                f.write(f'Docker Network: {network_name}\n')
+        
+        f.write('\n')
+        f.write('This script creates a network topology using mininet-wifi\n')
+        f.write('with dynamic configuration from the NetFlux5G UI.\n')
+        f.write('\n')
+        f.write('Network Mode Configuration:\n')
+        f.write('- 5G components (UEs, gNBs, VGCore) will use the Docker network\n')
+        f.write('  derived from the topology filename\n')
+        
+        # Get dynamic network name for documentation
+        if hasattr(self.main_window, 'docker_network_manager'):
+            network_name = self.main_window.docker_network_manager.get_current_network_name()
+            if network_name:
+                f.write(f'- Current network mode: {network_name}\n')
+            else:
+                f.write('- Default network mode: open5gs-ueransim_default (when no file loaded)\n')
+        else:
+            f.write('- Default network mode: open5gs-ueransim_default\n')
+        
+        # Add Docker network usage note
+        if hasattr(self.main_window, 'docker_network_manager'):
+            network_name = self.main_window.docker_network_manager.get_current_network_name()
+            if network_name:
+                f.write('\n')
+                f.write('Docker Network Usage:\n')
+                f.write(f'- Network Name: {network_name}\n')
+                f.write('- Type: Bridge network with attachable containers\n')
+                f.write('- Create network: docker network create --driver bridge --attachable ' + network_name + '\n')
+                f.write('- Delete network: docker network rm ' + network_name + '\n')
+        
+        f.write('"""\n\n')
+
+    def write_imports(self, f, categorized_nodes):
+        """Write necessary imports based on component types following fixed_topology-upf.py pattern."""
+        f.write('import sys\n')
+        f.write('import os\n')
+        
+        # Check if we need wireless functionality
+        has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
+                       categorized_nodes['ues'] or categorized_nodes['gnbs'])
+        
+        # Check if we need containernet for Docker/5G components
+        has_docker = (categorized_nodes['docker_hosts'] or categorized_nodes['ues'] or 
+                     categorized_nodes['gnbs'] or categorized_nodes['core5g'])
+        
+        # Import standard Mininet components
+        f.write('from mininet.net import Mininet\n')
+        f.write('from mininet.link import TCLink, Link, Intf\n')
+        f.write('from mininet.node import RemoteController, OVSKernelSwitch, Host, Node\n')
+        f.write('from mininet.log import setLogLevel, info\n')
+        
+        if has_wireless:
+            # Import mininet-wifi components
+            f.write('from mn_wifi.net import Mininet_wifi\n')
+            f.write('from mn_wifi.node import Station, OVSKernelAP\n')
+            f.write('from mn_wifi.link import wmediumd, Intf\n')
+            f.write('from mn_wifi.wmediumdConnector import interference\n')
+        
+        if has_docker:
+            # Import containernet components for Docker/5G support
+            f.write('from containernet.cli import CLI\n')
+            f.write('from containernet.node import DockerSta\n')
+            f.write('from containernet.term import makeTerm as makeTerm2\n')
+        else:
+            f.write('from mininet.cli import CLI\n')
+        
+        f.write('from subprocess import call\n')
+        f.write('\n\n')
+
+    def write_utility_functions(self, f):
+        """Write utility functions for the script."""
+        f.write('def sanitize_name(name):\n')
+        f.write('    """Convert display name to valid Python variable name."""\n')
+        f.write('    import re\n')
+        f.write('    # Remove special characters and spaces\n')
+        f.write('    clean_name = re.sub(r\'[^a-zA-Z0-9_]\', \'_\', name)\n')
+        f.write('    # Ensure it starts with a letter or underscore\n')
+        f.write('    if clean_name and clean_name[0].isdigit():\n')
+        f.write('        clean_name = \'_\' + clean_name\n')
+        f.write('    return clean_name or \'node\'\n\n')
+        
+        # Add Docker network utility functions if needed
+        if hasattr(self.main_window, 'docker_network_manager'):
+            network_name = self.main_window.docker_network_manager.get_current_network_name()
+            if network_name:
+                f.write('def check_docker_network():\n')
+                f.write('    """Check if the required Docker network exists."""\n')
+                f.write('    import subprocess\n')
+                f.write(f'    network_name = "{network_name}"\n')
+                f.write('    try:\n')
+                f.write('        result = subprocess.run(\n')
+                f.write('            ["docker", "network", "ls", "--filter", f"name={network_name}", "--format", "{{.Name}}"],\n')
+                f.write('            capture_output=True, text=True, timeout=10\n')
+                f.write('        )\n')
+                f.write('        if result.returncode == 0:\n')
+                f.write('            networks = result.stdout.strip().split(\'\\n\')\n')
+                f.write('            return network_name in networks\n')
+                f.write('        return False\n')
+                f.write('    except Exception:\n')
+                f.write('        return False\n\n')
+                
+                f.write('def create_docker_network_if_needed():\n')
+                f.write('    """Create Docker network if it doesn\'t exist."""\n')
+                f.write('    import subprocess\n')
+                f.write(f'    network_name = "{network_name}"\n')
+                f.write('    \n')
+                f.write('    if check_docker_network():\n')
+                f.write('        print(f"Docker network \'{network_name}\' already exists")\n')
+                f.write('        return True\n')
+                f.write('    \n')
+                f.write('    print(f"Creating Docker network: {network_name}")\n')
+                f.write('    try:\n')
+                f.write('        result = subprocess.run(\n')
+                f.write('            ["docker", "network", "create", "--driver", "bridge", "--attachable", network_name],\n')
+                f.write('            capture_output=True, text=True, timeout=30\n')
+                f.write('        )\n')
+                f.write('        if result.returncode == 0:\n')
+                f.write('            print(f"Successfully created Docker network: {network_name}")\n')
+                f.write('            return True\n')
+                f.write('        else:\n')
+                f.write('            print(f"Failed to create Docker network: {result.stderr}")\n')
+                f.write('            return False\n')
+                f.write('    except Exception as e:\n')
+                f.write('        print(f"Error creating Docker network: {e}")\n')
+                f.write('        return False\n\n')
+
+    def write_topology_function(self, f, nodes, links, categorized_nodes):
+        """Write the main topology function following mininet-wifi patterns.
+        
+        Network Mode Behavior:
+        - When a topology file is loaded, the Docker network mode for 5G components 
+          (UEs, gNBs, VGCore) is dynamically set based on the filename
+        - Network name format: "netflux5g_{sanitized_filename}"
+        - Falls back to "open5gs-ueransim_default" when no file is loaded
+        """
+        f.write('def topology(args):\n')
+        f.write('    """Create network topology."""\n')
+        
+        # Get dynamic network name for 5G components
+        dynamic_network_name = None
+        if hasattr(self.main_window, 'docker_network_manager'):
+            dynamic_network_name = self.main_window.docker_network_manager.get_current_network_name()
+        
+        # Add Docker network setup if needed
+        if dynamic_network_name:
+            f.write('    \n')
+            f.write('    # Setup Docker network\n')
+            f.write('    info("*** Setting up Docker network\\n")\n')
+            f.write('    create_docker_network_if_needed()\n')
+            f.write('    \n')
+        
+        # Store network name for use in component creation
+        if dynamic_network_name:
+            f.write(f'    # Dynamic network mode based on topology file: {os.path.basename(self.main_window.current_file) if self.main_window.current_file else "Unknown"}\n')
+            f.write(f'    NETWORK_MODE = "{dynamic_network_name}"\n')
+            f.write(f'    info(f"*** Using Docker network: {{NETWORK_MODE}}\\n")\n')
+        else:
+            f.write(f'    # Default network mode when no file is loaded\n')
+            f.write(f'    NETWORK_MODE = "open5gs-ueransim_default"\n')
+            f.write(f'    info(f"*** Using default Docker network: {{NETWORK_MODE}}\\n")\n')
+        f.write('    \n')
+        
+        # Initialize network
+        self.write_network_initialization(f, categorized_nodes)
+        
+        # Add controllers
+        self.write_controllers(f, categorized_nodes)
+        
+        # Add network components
+        f.write('    info("*** Creating nodes\\n")\n')
+        self.write_access_points(f, categorized_nodes)
+        self.write_stations(f, categorized_nodes)
+        self.write_hosts(f, categorized_nodes)
+        self.write_switches(f, categorized_nodes)
+        self.write_5g_components(f, categorized_nodes)
+        self.write_docker_hosts(f, categorized_nodes)
+        
+        # Configure nodes
+        f.write('    info("*** Configuring nodes\\n")\n')
+        f.write('    net.configureNodes()\n\n')
+        
+        # Set propagation model if wireless components exist
+        self.write_propagation_model(f, categorized_nodes)
+        
+        # Create links
+        f.write('    info("*** Creating links\\n")\n')
+        self.write_links(f, links, categorized_nodes)
+        
+        # Add plot for wireless networks
+        self.write_plot_graph(f, categorized_nodes)
+        
+        # Start network
+        f.write('    info("*** Starting network\\n")\n')
+        f.write('    net.build()\n')
+        self.write_controller_startup(f, categorized_nodes)
+        self.write_ap_startup(f, categorized_nodes)
+        
+        # Start 5G components
+        self.write_5g_startup(f, categorized_nodes)
+        
+        # CLI and cleanup
+        f.write('    info("*** Running CLI\\n")\n')
+        f.write('    CLI(net)\n\n')
+        f.write('    info("*** Stopping network\\n")\n')
+        f.write('    net.stop()\n\n')
+
+    def write_network_initialization(self, f, categorized_nodes):
+        """Write network initialization code following fixed_topology-upf.py pattern."""
+        has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
+                       categorized_nodes['ues'] or categorized_nodes['gnbs'])
+        has_docker = (categorized_nodes['docker_hosts'] or categorized_nodes['ues'] or 
+                     categorized_nodes['gnbs'] or categorized_nodes['core5g'])
+        
+        # Always use Mininet_wifi for 5G/wireless components like in the original
+        if has_wireless or has_docker:
+            f.write('    net = Mininet_wifi(topo=None,\n')
+            f.write('                       build=False,\n')
+            f.write('                       link=wmediumd, wmediumd_mode=interference,\n')
+            f.write('                       ipBase=\'10.0.0.0/8\')\n')
+        else:
+            f.write('    net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
+        f.write('\n')
+
+    def write_controllers(self, f, categorized_nodes):
+        """Write controller creation code following fixed_topology-upf.py pattern."""
+        f.write('    info("*** Adding controller\\n")\n')
+        if categorized_nodes['controllers']:
+            for controller in categorized_nodes['controllers']:
+                props = controller.get('properties', {})
+                ctrl_name = self.sanitize_variable_name(controller['name'])
+                ctrl_ip = props.get('Controller_IPAddress', '127.0.0.1')
+                ctrl_port = props.get('Controller_Port', 6633)
+                
+                f.write(f'    {ctrl_name} = net.addController(name=\'{ctrl_name}\',\n')
+                f.write(f'                                   controller=RemoteController,\n')
+                f.write(f'                                   ip=\'{ctrl_ip}\',\n')
+                f.write(f'                                   port={ctrl_port})\n')
+        else:
+            # Add default controller like in the original
+            f.write('    c0 = net.addController(name=\'c0\',\n')
+            f.write('                           controller=RemoteController)\n')
+        f.write('\n')
+
+    def write_access_points(self, f, categorized_nodes):
+        """Write Access Point creation code following fixed_topology-upf.py pattern."""
+        if not categorized_nodes['aps']:
+            return
+            
+        f.write('    info("*** Add APs & Switches\\n")\n')
+        for ap in categorized_nodes['aps']:
+            props = ap.get('properties', {})
+            ap_name = self.sanitize_variable_name(ap['name'])
+            
+            # Extract properties from UI
+            ssid = props.get('AP_SSID', props.get('lineEdit_5', f'{ap_name}-ssid'))
+            channel = props.get('AP_Channel', props.get('spinBox_2', '36'))
+            mode = props.get('AP_Mode', props.get('comboBox_2', 'a'))
+            position = f"{ap.get('x', 0):.1f},{ap.get('y', 0):.1f},0"
+            
+            # Build AP parameters following the original pattern
+            ap_params = [f"'{ap_name}'"]
+            ap_params.append("cls=OVSKernelAP")
+            ap_params.append(f"ssid='{ssid}'")
+            ap_params.append("failMode='standalone'")
+            ap_params.append("datapath='user'")
+            ap_params.append(f"channel='{channel}'")
+            ap_params.append(f"mode='{mode}'")
+            ap_params.append(f"position='{position}'")
+            
+            # Add power configuration for radio propagation
+            from manager.configmap import ConfigurationMapper
+            ap_config_opts = ConfigurationMapper.map_ap_config(props)
+            for opt in ap_config_opts:
+                if 'txpower=' in opt or 'range=' in opt:
+                    ap_params.append(opt)
+            
+            ap_params.append('protocols="OpenFlow14"')
+            
+            f.write(f'    {ap_name} = net.addAccessPoint({", ".join(ap_params)})\n')
+        f.write('\n')
+
+    def write_stations(self, f, categorized_nodes):
+        """Write Station creation code with dynamic properties."""
+        if not categorized_nodes['stas']:
+            return
+            
+        for sta in categorized_nodes['stas']:
+            props = sta.get('properties', {})
+            sta_name = self.sanitize_variable_name(sta['name'])
+            
+            # Build station parameters using ConfigurationMapper
+            sta_params = [f"'{sta_name}'"]
+            
+            # Add position
+            position = f"{sta.get('x', 0):.1f},{sta.get('y', 0):.1f},0"
+            sta_params.append(f"position='{position}'")
+            
+            # Add configuration options from ConfigurationMapper
+            from manager.configmap import ConfigurationMapper
+            sta_opts = ConfigurationMapper.map_sta_config(props)
+            sta_params.extend(sta_opts)
+            
+            f.write(f'    {sta_name} = net.addStation({", ".join(sta_params)})\n')
+        f.write('\n')
+
+    def write_hosts(self, f, categorized_nodes):
+        """Write Host creation code with dynamic properties."""
+        if not categorized_nodes['hosts']:
+            return
+            
+        for host in categorized_nodes['hosts']:
+            props = host.get('properties', {})
+            host_name = self.sanitize_variable_name(host['name'])
+            
+            # Build host parameters
+            host_params = [f"'{host_name}'"]
+            
+            # Add IP if specified
+            ip_addr = props.get('Host_IPAddress', props.get('lineEdit_2'))
+            if ip_addr and str(ip_addr).strip() and str(ip_addr).strip() != "192.168.1.1":
+                host_params.append(f"ip='{ip_addr}'")
+            
+            # Add MAC if specified
+            mac_addr = props.get('Host_MACAddress', props.get('lineEdit'))
+            if mac_addr and str(mac_addr).strip():
+                host_params.append(f"mac='{mac_addr}'")
+            
+            # Add CPU if specified
+            cpu = props.get('Host_AmountCPU', props.get('doubleSpinBox'))
+            if cpu and float(cpu) != 1.0:
+                host_params.append(f"cpu={cpu}")
+            
+            # Add memory if specified
+            memory = props.get('Host_Memory', props.get('spinBox'))
+            if memory and int(memory) > 0:
+                host_params.append(f"mem={memory}")
+            
+            f.write(f'    {host_name} = net.addHost({", ".join(host_params)})\n')
+        f.write('\n')
+
+    def write_switches(self, f, categorized_nodes):
+        """Write Switch creation code following fixed_topology-upf.py pattern."""
+        if not categorized_nodes['switches']:
+            return
+            
+        # Add switches to the same section as APs (continued from write_access_points)
+        for i, switch in enumerate(categorized_nodes['switches'], 1):
+            props = switch.get('properties', {})
+            switch_name = self.sanitize_variable_name(switch['name'])
+            
+            # Build switch parameters following the original pattern
+            switch_params = [f"'{switch_name}'"]
+            switch_params.append("cls=OVSKernelSwitch")
+            switch_params.append('protocols="OpenFlow14"')
+            
+            # Add DPID if specified
+            dpid = props.get('Switch_DPID', props.get('Router_DPID', props.get('AP_DPID', props.get('lineEdit_4'))))
+            if dpid and str(dpid).strip():
+                switch_params.append(f"dpid='{dpid}'")
+            
+            f.write(f'    {switch_name} = net.addSwitch({", ".join(switch_params)})\n')
+        f.write('\n')
+
+    def write_docker_hosts(self, f, categorized_nodes):
+        """Write Docker Host creation code with dynamic properties."""
+        if not categorized_nodes['docker_hosts']:
+            return
+            
+        for docker_host in categorized_nodes['docker_hosts']:
+            props = docker_host.get('properties', {})
+            host_name = self.sanitize_variable_name(docker_host['name'])
+            
+            # Build Docker host parameters
+            host_params = [f"'{host_name}'"]
+            host_params.append("cls=Docker")
+            
+            # Add Docker image if specified
+            image = props.get('DockerHost_ContainerImage', props.get('lineEdit_10'))
+            if image and str(image).strip():
+                host_params.append(f"dimage='{image}'")
+            
+            # Add port forwarding if specified
+            ports = props.get('DockerHost_PortForward', props.get('lineEdit_11'))
+            if ports and str(ports).strip():
+                host_params.append(f"ports='{ports}'")
+            
+            # Add volume mapping if specified
+            volumes = props.get('DockerHost_VolumeMapping', props.get('lineEdit_12'))
+            if volumes and str(volumes).strip():
+                host_params.append(f"volumes='{volumes}'")
+            
+            # Add IP if specified
+            ip_addr = props.get('DockerHost_IPAddress', props.get('lineEdit_2'))
+            if ip_addr and str(ip_addr).strip() and str(ip_addr).strip() != "192.168.1.1":
+                host_params.append(f"ip='{ip_addr}'")
+            
+            # Add MAC if specified
+            mac_addr = props.get('DockerHost_MACAddress', props.get('lineEdit'))
+            if mac_addr and str(mac_addr).strip():
+                host_params.append(f"mac='{mac_addr}'")
+            
+            # Add CPU if specified
+            cpu = props.get('DockerHost_AmountCPU', props.get('doubleSpinBox'))
+            if cpu and float(cpu) != 1.0:
+                host_params.append(f"cpu={cpu}")
+            
+            # Add memory if specified
+            memory = props.get('DockerHost_Memory', props.get('spinBox'))
+            if memory and int(memory) > 0:
+                host_params.append(f"mem={memory}")
+            
+            f.write(f'    {host_name} = net.addHost({", ".join(host_params)})\n')
+        f.write('\n')
+
+    def write_aps_and_switches_level2(self, f, categorized_nodes):
+        """Write APs and switches with Level 2 hierarchical topology features."""
+        if categorized_nodes['aps'] or categorized_nodes['switches']:
+            f.write('    info( \'\\n*** Add APs & Switches\\n\')\n')
+            
+            # Add APs with enhanced configuration
+            for i, ap in enumerate(categorized_nodes['aps'], 1):
+                props = ap.get('properties', {})
+                ap_name = self.sanitize_variable_name(ap['name'])
+                ssid = props.get('AP_SSID', f'{ap_name}-ssid')
+                channel = props.get('AP_Channel', '36')
+                mode = props.get('AP_Mode', 'a')
+                
+                # Build AP parameters
+                ap_params = [f"'{ap_name}'"]
+                ap_params.append(f"ssid='{ssid}'")
+                ap_params.append(f"mode='{mode}'")
+                ap_params.append(f"channel='{channel}'")
+                
+                # Hierarchical position: level2-apX
+                ap_params.append(f"position='0,0,{i}'")
+                ap_params.append("failMode='standalone'")
+                
+                f.write(f'    {ap_name} = net.addAccessPoint({", ".join(ap_params)})\n')
+            
+            # Add switches
+            for i, switch in enumerate(categorized_nodes['switches'], 1):
+                props = switch.get('properties', {})
+                switch_name = self.sanitize_variable_name(switch['name'])
+                
+                # Build switch parameters
+                switch_params = [f"'{switch_name}'"]
+                switch_params.append("cls=OVSKernelSwitch")
+                
+                # Add DPID if specified
+                dpid = props.get('Switch_DPID', props.get('Router_DPID', props.get('AP_DPID', props.get('lineEdit_4'))))
+                if dpid and str(dpid).strip():
+                    switch_params.append(f"dpid='{dpid}'")
+                
+                # Hierarchical position: level2-switchX
+                switch_params.append(f"position='0,0,{i+len(categorized_nodes['aps'])}'")
+                
+                f.write(f'    {switch_name} = net.addSwitch({", ".join(switch_params)})\n')
+            
+            f.write('\n')
+
+    def write_5g_components(self, f, categorized_nodes):
+        """Write 5G component creation code (gNBs and UEs) with enhanced AP functionality."""
+        # Write 5G Core components first
+        self.write_5g_core_components(f, categorized_nodes)
+        
+        # Write gNBs following the enhanced pattern with AP support
+        if categorized_nodes['gnbs']:
+            f.write('    info("*** Add gNB\\n")\n')
+            for i, gnb in enumerate(categorized_nodes['gnbs'], 1):
+                props = gnb.get('properties', {})
+                gnb_name = self.sanitize_variable_name(gnb['name'])
+                
+                # Build gNB parameters following the enhanced pattern
+                gnb_params = [f"'{gnb_name}'"]
+                gnb_params.append('cap_add=["net_admin"]')
+                gnb_params.append('network_mode=NETWORK_MODE')  # This will be replaced with actual variable reference
+                gnb_params.append('publish_all_ports=True')
+                gnb_params.append('dcmd="/bin/bash"')
+                gnb_params.append("cls=DockerSta")
+                gnb_params.append("dimage='adaptive/ueransim:latest'")  # Use our enhanced image
+                
+                # Add privileged mode for AP functionality
+                gnb_params.append('privileged=True')
+                
+                # Add volumes for host hardware access (needed for AP functionality)
+                volumes = [
+                    '"/sys:/sys"',
+                    '"/lib/modules:/lib/modules"',
+                    '"/sys/kernel/debug:/sys/kernel/debug"'
+                ]
+                gnb_params.append(f'volumes=[{", ".join(volumes)}]')
+                
+                # Add position
+                position = f"{gnb.get('x', 0):.1f},{gnb.get('y', 0):.1f},0"
+                gnb_params.append(f"position='{position}'")
+                
+                # Get enhanced configuration from ConfigurationMapper
+                from manager.configmap import ConfigurationMapper
+                gnb_config = ConfigurationMapper.map_gnb_config(props)
+                
+                # Add range (default 300 if not specified)
+                range_val = gnb_config.get('range', 300)
+                gnb_params.append(f"range={range_val}")
+                
+                # Add txpower if specified (default 30)
+                txpower = gnb_config.get('txpower', 30)
+                gnb_params.append(f"txpower={txpower}")
+                
+                # Build environment variables for both 5G and AP functionality
+                env_dict = {}
+                
+                # 5G Core configuration
+                env_dict["AMF_IP"] = gnb_config.get('amf_hostname', '10.0.0.3')  # Note: Still using IP for compatibility
+                env_dict["GNB_HOSTNAME"] = gnb_config.get('gnb_hostname', f'mn.{gnb_name}')
+                env_dict["N2_IFACE"] = gnb_config.get('n2_iface', f"{gnb_name}-wlan0")
+                env_dict["N3_IFACE"] = gnb_config.get('n3_iface', f"{gnb_name}-wlan0")
+                env_dict["RADIO_IFACE"] = gnb_config.get('radio_iface', f"{gnb_name}-wlan0")
+                env_dict["MCC"] = gnb_config.get('mcc', '999')
+                env_dict["MNC"] = gnb_config.get('mnc', '70')
+                env_dict["SST"] = gnb_config.get('sst', '1')
+                env_dict["SD"] = gnb_config.get('sd', '0xffffff')
+                env_dict["TAC"] = gnb_config.get('tac', '1')
+                
+                # Add AP configuration if enabled
+                ap_config = gnb_config.get('ap_config', {})
+                if ap_config:
+                    env_dict.update(ap_config)
+                
+                # Format environment like in the original
+                env_str = str(env_dict).replace("'", '"')
+                gnb_params.append(f"environment={env_str}")
+                
+                # Join parameters and replace network_mode placeholder with actual variable reference
+                params_str = ", ".join(gnb_params)
+                params_str = params_str.replace("'network_mode=NETWORK_MODE'", "network_mode=NETWORK_MODE")
+                
+                f.write(f'    {gnb_name} = net.addStation({params_str})\n')
+            f.write('\n')
+        
+        # Write UEs following the exact pattern from fixed_topology-upf.py
+        if categorized_nodes['ues']:
+            f.write('    info("*** Adding docker UE hosts\\n")\n')
+            for i, ue in enumerate(categorized_nodes['ues'], 1):
+                props = ue.get('properties', {})
+                ue_name = self.sanitize_variable_name(ue['name'])
+                
+                # Build UE parameters following the exact pattern
+                ue_params = [f"'{ue_name}'"]
+                ue_params.append('devices=["/dev/net/tun"]')
+                ue_params.append('cap_add=["net_admin"]')
+                
+                # Add enhanced power and range configuration from ConfigurationMapper
+                from manager.configmap import ConfigurationMapper
+                ue_config = ConfigurationMapper.map_ue_config(props)
+                
+                # Add range (default 116 if not specified)
+                range_val = ue_config.get('range', 116)
+                ue_params.append(f'range={range_val}')
+                
+                # Add txpower if specified
+                if 'txpower' in ue_config:
+                    ue_params.append(f"txpower={ue_config['txpower']}")
+                
+                # Add association mode if specified
+                if 'association' in ue_config and ue_config['association'] != 'auto':
+                    ue_params.append(f"associationMode='{ue_config['association']}'")
+                
+                ue_params.append('network_mode=NETWORK_MODE')
+                ue_params.append('dcmd="/bin/bash"')
+                ue_params.append("cls=DockerSta")
+                ue_params.append("dimage='gradiant/ueransim:3.2.6'")
+                
+                # Add position
+                position = f"{ue.get('x', 0):.1f},{ue.get('y', 0):.1f},0"
+                ue_params.append(f"position='{position}'")
+                
+                # Enhanced UE environment variables with all new configuration options
+                gnb_hostname = ue_config.get('gnb_hostname', 'mn.gnb')
+                
+                # Build comprehensive environment dictionary
+                env_dict = {
+                    # Core 5G Configuration
+                    "GNB_HOSTNAME": gnb_hostname,
+                    "APN": ue_config.get('apn', 'internet'),
+                    "MSISDN": ue_config.get('msisdn', f'000000000{i:01d}'),
+                    "MCC": ue_config.get('mcc', '999'),
+                    "MNC": ue_config.get('mnc', '70'),
+                    "SST": ue_config.get('sst', '1'),
+                    "SD": ue_config.get('sd', '0xffffff'),
+                    "TAC": ue_config.get('tac', '1'),
+                    
+                    # Authentication Configuration
+                    "KEY": ue_config.get('key', '465B5CE8B199B49FAA5F0A2EE238A6BC'),
+                    "OP_TYPE": ue_config.get('op_type', 'OPC'),
+                    "OP": ue_config.get('op', 'E8ED289DEBA952E4283B54E88E6183CA'),
+                    
+                    # Device Identifiers
+                    "IMEI": ue_config.get('imei', '356938035643803'),
+                    "IMEISV": ue_config.get('imeisv', '4370816125816151'),
+                    
+                    # Network Configuration
+                    "TUNNEL_IFACE": ue_config.get('tunnel_iface', 'uesimtun0'),
+                    "RADIO_IFACE": ue_config.get('radio_iface', 'eth0'),
+                    "SESSION_TYPE": ue_config.get('session_type', 'IPv4'),
+                    "PDU_SESSIONS": str(ue_config.get('pdu_sessions', 1)),
+                    
+                    # Mobility Configuration
+                    "MOBILITY_ENABLED": 'true' if ue_config.get('mobility', False) else 'false'
+                }
+                
+                # Add gNB IP if specified
+                if 'gnb_ip' in ue_config:
+                    env_dict["GNB_IP"] = ue_config['gnb_ip']
+                
+                # Format environment like in the original
+                env_str = str(env_dict).replace("'", '"')
+                ue_params.append(f"environment={env_str}")
+                
+                # Join parameters and replace network_mode placeholder with actual variable reference
+                params_str = ", ".join(ue_params)
+                params_str = params_str.replace("'network_mode=NETWORK_MODE'", "network_mode=NETWORK_MODE")
+                
+                f.write(f'    {ue_name} = net.addStation({params_str})\n')
+            f.write('\n')
+        
+        if categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']:
+            f.write('\n')
+
+    def write_5g_core_components(self, f, categorized_nodes):
+        """
+        Write 5G Core components with enhanced Open5GS integration and dynamic configuration.
+        
+        This function generates Docker-based 5G Core components that follow the latest Open5GS
+        architecture and container configuration. Features include:
+        
+        - Dynamic Docker image configuration from UI
+        - Environment variable injection for runtime configuration
+        - Support for latest Open5GS component structure
+        - OVS/OpenFlow integration for SDN functionality
+        - Proper network interface binding
+        - MongoDB database connectivity
+        - Configuration file volume mounting
+        - Component-specific startup commands
+        
+        The generated components are compatible with mininet-wifi and follow the
+        patterns established in the latest Open5GS Docker implementations.
+        """
+        if not categorized_nodes['core5g']:
+            return
+            
+        # Extract 5G core components from VGcore configurations
+        core_components = self.extract_5g_components_by_type(categorized_nodes['core5g'])
+        
+        # Import configuration mapper for VGcore properties
+        from manager.configmap import ConfigurationMapper
+        
+        # Get VGcore component configuration (if available)
+        vgcore_config = {}
+        if categorized_nodes['core5g']:
+            vgcore_node = categorized_nodes['core5g'][0]  # Use first VGcore node
+            vgcore_properties = vgcore_node.get('properties', {})
+            vgcore_config = ConfigurationMapper.map_vgcore_config(vgcore_properties)
+        
+        # Debug: Print extracted VGcore configuration for troubleshooting
+        if vgcore_config:
+            debug_print("DEBUG: VGcore configuration extracted:")
+            for key, value in vgcore_config.items():
+                debug_print(f"  {key}: {value}")
+        else:
+            debug_print("DEBUG: No VGcore configuration found, using defaults")
+        
+        # Mapping of component types to their configurations based on latest Open5GS
+        component_config = {
+            'UPF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'upf.yaml',
+                'startup_cmd': 'open5gs-upfd',
+                'privileged': True,
+                'requires_tun': False,
+                'terminal_startup': True,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'ENABLE_NAT': 'true' if vgcore_config.get('enable_nat', True) else 'false',
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0'),
+                    'OVS_ENABLED': 'true' if vgcore_config.get('ovs_enabled', False) else 'false',
+                    'OVS_CONTROLLER': vgcore_config.get('ovs_controller', ''),
+                    'OVS_BRIDGE_NAME': vgcore_config.get('ovs_bridge_name', 'br-open5gs'),
+                    'OVS_FAIL_MODE': vgcore_config.get('ovs_fail_mode', 'standalone'),
+                    'OPENFLOW_PROTOCOLS': vgcore_config.get('openflow_protocols', 'OpenFlow14'),
+                    'OVS_DATAPATH': vgcore_config.get('ovs_datapath', 'kernel'),
+                    'CONTROLLER_PORT': vgcore_config.get('controller_port', '6633'),
+                    'BRIDGE_PRIORITY': vgcore_config.get('bridge_priority', '32768'),
+                    'STP_ENABLED': 'true' if vgcore_config.get('stp_enabled', False) else 'false'
+                }
+            },
+            'AMF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'amf.yaml',
+                'startup_cmd': 'open5gs-amfd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': True,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0'),
+                    'MCC': vgcore_config.get('mcc', '999'),
+                    'MNC': vgcore_config.get('mnc', '70'),
+                    'TAC': vgcore_config.get('tac', '1'),
+                    'SST': vgcore_config.get('sst', '1'),
+                    'SD': vgcore_config.get('sd', '0xffffff')
+                }
+            },
+            'SMF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'smf.yaml',
+                'startup_cmd': 'open5gs-smfd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'NRF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'nrf.yaml',
+                'startup_cmd': 'open5gs-nrfd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'SCP': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'scp.yaml',
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'AUSF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'ausf.yaml',
+                'startup_cmd': 'open5gs-ausfd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'BSF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'bsf.yaml',
+                'startup_cmd': 'open5gs-bsfd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'NSSF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'nssf.yaml',
+                'startup_cmd': 'open5gs-nssfd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'PCF': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'pcf.yaml',
+                'startup_cmd': 'open5gs-pcfd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'UDM': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'udm.yaml',
+                'startup_cmd': 'open5gs-udmd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            },
+            'UDR': {
+                'image': vgcore_config.get('docker_image', 'adaptive/open5gs:1.0'),
+                'default_config': 'udr.yaml',
+                'startup_cmd': 'open5gs-udrd',
+                'privileged': False,
+                'requires_tun': False,
+                'terminal_startup': False,
+                'env_vars': {
+                    'DB_URI': vgcore_config.get('database_uri', 'mongodb://mongo/open5gs'),
+                    'NETWORK_INTERFACE': vgcore_config.get('network_interface', 'eth0')
+                }
+            }
+        }
+        
+        # Add working directory variable
+        f.write('    cwd = os.getcwd()  # Current Working Directory\n\n')
+        
+        # Generate code for each 5G core component type
+        for comp_type, components in core_components.items():
+            if components:
+                config = component_config.get(comp_type, component_config['AMF'])
+                f.write(f'    info("*** Add {comp_type}\\n")\n')
+                
+                for i, component in enumerate(components, 1):
+                    comp_name = self.sanitize_variable_name(component.get('name', f'{comp_type.lower()}{i}'))
+                    
+                    # Build component parameters following fixed_topology-upf.py pattern
+                    comp_params = [f"'{comp_name}'"]
+                    
+                    # Add required Docker parameters
+                    if config['requires_tun']:
+                        comp_params.append('devices=["/dev/net/tun"]')
+                    comp_params.append('cap_add=["net_admin"]')
+                    comp_params.append('network_mode=NETWORK_MODE')
+                    
+                    if config['privileged']:
+                        comp_params.append('privileged=True')
+                    
+                    comp_params.append('publish_all_ports=True')
+                    comp_params.append('dcmd="/bin/bash"')
+                    comp_params.append("cls=DockerSta")
+                    comp_params.append(f"dimage='{config['image']}'")
+                    
+                    # Add position
+                    x_pos = component.get('x', 0)
+                    y_pos = component.get('y', 0)
+                    position = f"{x_pos:.1f},{y_pos:.1f},0"
+                    comp_params.append(f"position='{position}'")
+                    comp_params.append("range=116")
+                    
+                    # Add volume mount for configuration
+                    config_file = component.get('config_file', config['default_config'])
+                    comp_params.append(f'volumes=[cwd + "/config/{config_file}:/opt/open5gs/etc/open5gs/{comp_type.lower()}.yaml"]')
+                    
+                    # Add environment variables for configuration
+                    if 'env_vars' in config and config['env_vars']:
+                        env_list = []
+                        for env_key, env_value in config['env_vars'].items():
+                            env_list.append(f'"{env_key}={env_value}"')
+                        if env_list:
+                            comp_params.append(f'environment=[{", ".join(env_list)}]')
+                    
+                    # Join parameters and replace network_mode placeholder with actual variable reference
+                    params_str = ", ".join(comp_params)
+                    params_str = params_str.replace("'network_mode=NETWORK_MODE'", "network_mode=NETWORK_MODE")
+                    
+                    f.write(f'    {comp_name} = net.addStation({params_str})\n')
+        
+        f.write('\n')
+
+    def write_5g_startup(self, f, categorized_nodes):
+        """Write 5G component startup commands following fixed_topology-upf.py pattern."""
+        if not (categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']):
+            return
+            
+        # Get core components for startup sequence
+        core_components = categorized_nodes.get('core5g_components', {})
+        
+        # Add network configuration commands
+        f.write('    info("*** Connecting Docker nodes to APs\\n")\n')
+        f.write('    # Connect components to their respective access points\n')
+        
+        # Connect UEs to APs (example pattern)
+        for i, ue in enumerate(categorized_nodes['ues'], 1):
+            ue_name = self.sanitize_variable_name(ue['name'])
+            # Default AP connection - can be customized based on UI configuration
+            ap_name = 'ap1-ssid'  # This should be determined from topology links
+            f.write(f'    {ue_name}.cmd("iw dev {ue_name}-wlan0 connect {ap_name}")\n')
+        
+        f.write('\n')
+        f.write('    info("*** Configuring Propagation Model\\n")\n')
+        f.write('    net.setPropagationModel(model="logDistance", exp=3)\n\n')
+        
+        f.write('    info("*** Configuring WiFi nodes\\n")\n')
+        f.write('    net.configureWifiNodes()\n\n')
+        
+        # Add links section
+        f.write('    info("*** Add links\\n")\n')
+        # This will be filled by the write_links method
+        
+        # Add plot graph
+        f.write('    net.plotGraph(max_x=1000, max_y=1000)\n\n')
+        
+        f.write('    info("*** Starting network\\n")\n')
+        f.write('    net.build()\n\n')
+        
+        # Start controllers
+        f.write('    info("*** Starting controllers\\n")\n')
+        if categorized_nodes['controllers']:
+            for controller in categorized_nodes['controllers']:
+                ctrl_name = self.sanitize_variable_name(controller['name'])
+                f.write(f'    {ctrl_name}.start()\n')
+        else:
+            f.write('    c0.start()\n')
+        f.write('\n')
+        
+        # Start APs
+        f.write('    info("*** Starting APs\\n")\n')
+        controller_name = 'c0'
+        if categorized_nodes['controllers']:
+            controller_name = self.sanitize_variable_name(categorized_nodes['controllers'][0]['name'])
+            
+        for ap in categorized_nodes['aps']:
+            ap_name = self.sanitize_variable_name(ap['name'])
+            f.write(f'    net.get("{ap_name}").start([{controller_name}])\n')
+            
+        # Start switches
+        for switch in categorized_nodes['switches']:
+            switch_name = self.sanitize_variable_name(switch['name'])
+            f.write(f'    net.get("{switch_name}").start([{controller_name}])\n')
+        f.write('\n')
+        
+        # Add capture script execution like in original
+        f.write('    info("*** Capture all initialization flow and slice packet\\n")\n')
+        f.write('    Capture1 = cwd + "/capture-initialization-fixed.sh"\n')
+        f.write('    CLI(net, script=Capture1)\n\n')
+
+        f.write('    CLI.do_sh(net, "sleep 20")\n\n')
+
+        f.write('    info("*** pingall for testing and flow tables update\\n")\n')
+        f.write('    net.pingAll()\n\n')
+        
+        f.write('    CLI.do_sh(net, "sleep 10")\n\n')
+        
+        # Start 5G Core components in proper order with makeTerm2
+        startup_order = ['NRF', 'SCP', 'AUSF', 'UDM', 'UDR', 'PCF', 'BSF', 'NSSF', 'SMF']
+        
+        # Start UPF components first (they need special handling)
+        if 'UPF' in core_components:
+            f.write('    info("*** Post configure Docker UPF connection to Core\\n")\n')
+            for instance in core_components['UPF']:
+                instance_name = self.sanitize_variable_name(instance.get('name', 'upf1'))
+                f.write(f'    makeTerm2({instance_name}, cmd="/entrypoint.sh open5gs-upfd 2>&1 | tee -a /logging/{instance_name}.log")\n')
+            f.write('\n')
+        
+        # Start AMF components
+        if 'AMF' in core_components:
+            f.write('    info("*** Post configure Docker AMF connection to Core\\n")\n')
+            for instance in core_components['AMF']:
+                instance_name = self.sanitize_variable_name(instance.get('name', 'amf1'))
+                f.write(f'    makeTerm2({instance_name}, cmd="open5gs-amfd 2>&1 | tee -a /logging/{instance_name}.log")\n')
+            f.write('\n')
+        
+        # Start other core components (if configured)
+        for comp_type in startup_order:
+            if comp_type in core_components:
+                f.write(f'    info("*** Starting {comp_type} components\\n")\n')
+                for instance in core_components[comp_type]:
+                    instance_name = self.sanitize_variable_name(instance.get('name', f'{comp_type.lower()}1'))
+                    cmd = f'open5gs-{comp_type.lower()}d'
+                    f.write(f'    makeTerm2({instance_name}, cmd="{cmd} 2>&1 | tee -a /logging/{instance_name}.log")\n')
+                f.write('\n')
+        
+        f.write('    CLI.do_sh(net, "sleep 10")\n\n')
+        
+        # Start gNBs
+        if categorized_nodes['gnbs']:
+            f.write('    info("*** Post configure Docker gNB connection to AMF\\n")\n')
+            for gnb in categorized_nodes['gnbs']:
+                gnb_name = self.sanitize_variable_name(gnb['name'])
+                f.write(f'    makeTerm2({gnb_name}, cmd="/entrypoint.sh gnb 2>&1 | tee -a /logging/{gnb_name}.log")\n')
+            f.write('\n')
+            f.write('    CLI.do_sh(net, "sleep 10")\n\n')
+        
+        # Start UEs
+        if categorized_nodes['ues']:
+            f.write('    info("*** Post configure Docker UE nodes\\n")\n')
+            for ue in categorized_nodes['ues']:
+                ue_name = self.sanitize_variable_name(ue['name'])
+                f.write(f'    makeTerm2({ue_name}, cmd="/entrypoint.sh ue 2>&1 | tee -a /logging/{ue_name}.log")\n')
+            f.write('\n')
+            f.write('    CLI.do_sh(net, "sleep 20")\n\n')
+            
+            # Add UE routing configuration
+            f.write('    info("*** Route traffic on UE for End-to-End and End-to-Edge Connection\\n")\n')
+            for i, ue in enumerate(categorized_nodes['ues'], 1):
+                ue_name = self.sanitize_variable_name(ue['name'])
+                props = ue.get('properties', {})
+                apn = props.get('UE_APN', 'internet')
+                
+                # Route based on APN
+                if apn == 'internet':
+                    f.write(f'    {ue_name}.cmd("ip route add 10.45.0.0/16 dev uesimtun0")\n')
+                elif apn == 'internet2':
+                    f.write(f'    {ue_name}.cmd("ip route add 10.46.0.0/16 dev uesimtun0")\n')
+                else:
+                    f.write(f'    {ue_name}.cmd("ip route add 10.45.0.0/16 dev uesimtun0")\n')
+            f.write('\n')
+        
+        # Add CLI startup
+        f.write('    info("*** Running CLI\\n")\n')
+        f.write('    CLI(net)\n\n')
+        
+        f.write('    info("*** Stopping network\\n")\n')
+        f.write('    net.stop()\n\n')
+
+    def extract_5g_components_by_type(self, core5g_components):
+        """Extract 5G components organized by type from VGcore configurations."""
+        components_by_type = {
+            'UPF': [], 'AMF': [], 'SMF': [], 'NRF': [], 'SCP': [],
+            'AUSF': [], 'BSF': [], 'NSSF': [], 'PCF': [],
+            'UDM': [], 'UDR': []
+        }
+        
+        for vgcore in core5g_components:
+            props = vgcore.get('properties', {})
+            
+            # Look for component configurations in properties
+            for comp_type in components_by_type.keys():
+                # Look for the new configs format first
+                config_key = f"{comp_type}_configs"
+                if config_key in props and props[config_key]:
+                    config_data = props[config_key]
+                    if isinstance(config_data, list):
+                        for row_idx, row_data in enumerate(config_data):
+                            if isinstance(row_data, dict) and row_data.get('name'):
+                                # Extract configuration from new format
+                                comp_name = row_data.get('name', f'{comp_type.lower()}{row_idx+1}')
+                                config_file = row_data.get('config_filename', f'{comp_type.lower()}.yaml')
+                                config_file_path = row_data.get('config_file_path', '')
+                                
+                                component_info = {
+                                    'name': comp_name,
+                                    'x': vgcore.get('x', 0),
+                                    'y': vgcore.get('y', 0),
+                                    'properties': props,
+                                    'config_file': config_file,
+                                    'config_file_path': config_file_path,
+                                    'config_content': row_data.get('config_content', {}),
+                                    'imported': row_data.get('imported', False),
+                                    'component_type': comp_type,
+                                    'row_data': row_data
+                                }
+                                components_by_type[comp_type].append(component_info)
+                
+                # Fallback to old table format for backward compatibility
+                else:
+                    table_key = f'Component5G_{comp_type}table'
+                    if table_key in props and props[table_key]:
+                        table_data = props[table_key]
+                        if isinstance(table_data, list):
+                            for row_idx, row_data in enumerate(table_data):
+                                if isinstance(row_data, list) and len(row_data) >= 2:
+                                    # Extract name and config file from old table format
+                                    comp_name = row_data[0] if row_data[0] else f'{comp_type.lower()}{row_idx+1}'
+                                    config_file = row_data[1] if len(row_data) > 1 and row_data[1] else f'{comp_type.lower()}.yaml'
+                                    
+                                    component_info = {
+                                        'name': comp_name,
+                                        'x': vgcore.get('x', 0),
+                                        'y': vgcore.get('y', 0),
+                                        'properties': props,
+                                        'config_file': config_file,
+                                        'config_file_path': '',  # Old format doesn't have file paths
+                                        'config_content': {},
+                                        'imported': False,
+                                        'component_type': comp_type,
+                                        'table_row': row_data  # Keep for backward compatibility
+                                    }
+                                    components_by_type[comp_type].append(component_info)
+        
+        # Store extracted components for use in startup
+        return components_by_type
+
+    def write_propagation_model(self, f, categorized_nodes):
+        """Write propagation model configuration for wireless networks."""
+        has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
+                       categorized_nodes['ues'] or categorized_nodes['gnbs'])
+        
+        if has_wireless:
+            f.write('    info("*** Configuring propagation model\\n")\n')
+            f.write('    net.setPropagationModel(model="logDistance", exp=4.5)\n\n')
+
+    def write_links(self, f, links, categorized_nodes):
+        """Write link creation code based on extracted links."""
+        if not links:
+            return
+            
+        for link in links:
+            source_name = self.sanitize_variable_name(link['source'])
+            dest_name = self.sanitize_variable_name(link['destination'])
+            
+            # Replace VGcore #1 connections with amf1 connections
+            # Handle various possible names for VGcore #1
+            if source_name in ["VGcore__1", "VGCore__1", "VGcore_1", "VGCore_1"]:
+                source_name = "amf1"
+            if dest_name in ["VGcore__1", "VGCore__1", "VGcore_1", "VGCore_1"]:
+                dest_name = "amf1"
+            
+            # Build link parameters
+            link_params = [source_name, dest_name]
+            
+            # Add link properties if any
+            link_props = link.get('properties', {})
+            if link_props.get('bandwidth'):
+                link_params.append(f"bw={link_props['bandwidth']}")
+            if link_props.get('delay'):
+                link_params.append(f"delay='{link_props['delay']}'")
+            if link_props.get('loss'):
+                link_params.append(f"loss={link_props['loss']}")
+            
+            f.write(f'    net.addLink({", ".join(link_params)})\n')
+        f.write('\n')
+
+    def write_plot_graph(self, f, categorized_nodes):
+        """Write plot graph configuration for wireless networks."""
+        has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
+                       categorized_nodes['ues'] or categorized_nodes['gnbs'])
+        
+        if has_wireless:
+            f.write('    if "-p" not in args:\n')
+            f.write('        net.plotGraph(max_x=200, max_y=200)\n\n')
+
+    def write_controller_startup(self, f, categorized_nodes):
+        """Write controller startup code."""
+        if categorized_nodes['controllers']:
+            for controller in categorized_nodes['controllers']:
+                ctrl_name = self.sanitize_variable_name(controller['name'])
+                f.write(f'    {ctrl_name}.start()\n')
+        else:
+            f.write('    c0.start()\n')
+        f.write('\n')
+
+    def write_ap_startup(self, f, categorized_nodes):
+        """Write Access Point startup code."""
+        if not categorized_nodes['aps']:
+            return
+            
+        controller_name = 'c0'
+        if categorized_nodes['controllers']:
+            controller_name = self.sanitize_variable_name(categorized_nodes['controllers'][0]['name'])
+            
+        for ap in categorized_nodes['aps']:
+            ap_name = self.sanitize_variable_name(ap['name'])
+            f.write(f'    {ap_name}.start([{controller_name}])\n')
+        f.write('\n')
+
+    def write_main_execution(self, f):
+        """Write the main execution block."""
+        f.write('if __name__ == \'__main__\':\n')
+        f.write('    setLogLevel(\'info\')\n')
+        f.write('    topology(sys.argv)\n')
+
+    def sanitize_variable_name(self, name):
+        """Convert display name to valid Python variable name."""
+        import re
+        # Remove special characters and spaces
+        clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
+        # Ensure it starts with a letter or underscore
+        if clean_name and clean_name[0].isdigit():
+            clean_name = '_' + clean_name
+        return clean_name or 'node'
+    
+    def _check_save_status(self):
+        """Check if topology should be saved before export and prompt user if needed.
+        
+        Returns:
+            bool: True if export should continue, False if user cancelled
+        """
+        debug_print("Checking save status before export...")
+        
+        # Check if there are unsaved changes or no file is saved
+        has_unsaved = getattr(self.main_window, 'has_unsaved_changes', False)
+        current_file = getattr(self.main_window, 'current_file', None)
+        
+        debug_print(f"Save status: has_unsaved={has_unsaved}, current_file={current_file}")
+        
+        # Get topology info for better messaging
+        nodes, _ = self.main_window.extractTopology()
+        has_components = len(nodes) > 0
+        
+        debug_print(f"Topology info: {len(nodes)} components found")
+        
+        if has_unsaved or not current_file:
+            # Determine the message based on the situation
+            if not current_file:
+                title = "Unsaved Topology"
+                if has_components:
+                    message = (f"The topology has {len(nodes)} component(s) but has not been saved to a file yet.\n\n"
+                              "It is recommended to save the topology first to ensure:\n"
+                              "• Proper Docker network naming based on filename\n"
+                              "• Configuration persistence\n"
+                              "• Easier topology management\n\n"
+                              "Do you want to save the topology first?")
+                else:
+                    message = ("The topology has not been saved to a file yet.\n\n"
+                              "Although there are no components currently, saving the file first\n"
+                              "will ensure proper Docker network naming for any components\n"
+                              "you may add to the exported script.\n\n"
+                              "Do you want to save the topology first?")
+            else:
+                title = "Unsaved Changes"
+                message = ("The topology has unsaved changes.\n\n"
+                          "It is recommended to save the changes first to ensure:\n"
+                          "• Latest configuration is used in export\n"
+                          "• Proper Docker network naming\n"
+                          "• Configuration consistency\n\n"
+                          "Do you want to save the changes first?")
+            
+            # Show dialog with options
+            reply = QMessageBox.question(
+                self.main_window,
+                title,
+                message,
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes  # Default to Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                debug_print("User chose to save before export")
+                # Try to save the file
+                if hasattr(self.main_window, 'file_manager'):
+                    # Store current state to check if save was successful
+                    old_file = getattr(self.main_window, 'current_file', None)
+                    old_unsaved = getattr(self.main_window, 'has_unsaved_changes', False)
+                    
+                    if not current_file:
+                        # No file exists, use Save As
+                        self.main_window.file_manager.saveTopologyAs()
+                    else:
+                        # File exists, just save
+                        self.main_window.file_manager.saveTopology()
+                    
+                    # Check if save was successful by verifying file state changed
+                    new_file = getattr(self.main_window, 'current_file', None)
+                    new_unsaved = getattr(self.main_window, 'has_unsaved_changes', False)
+                    
+                    if not current_file and not new_file:
+                        # Save As was cancelled (no file selected)
+                        return False
+                    elif current_file and new_unsaved == old_unsaved and old_unsaved:
+                        # Save failed (unsaved state didn't change when it should have)
+                        QMessageBox.warning(
+                            self.main_window,
+                            "Save Failed", 
+                            "Failed to save the topology. Please try again."
+                        )
+                        return False
+                        
+                else:
+                    QMessageBox.warning(
+                        self.main_window,
+                        "Save Error", 
+                        "Unable to save topology. File manager not available."
+                    )
+                    return False
+                    
+            elif reply == QMessageBox.Cancel:
+                debug_print("User cancelled export")
+                # User cancelled the operation
+                return False
+                
+            # If reply == QMessageBox.No, continue with export anyway
+            debug_print("User chose to continue export without saving")
+        
+        debug_print("Save status check passed, proceeding with export")
+        return True
