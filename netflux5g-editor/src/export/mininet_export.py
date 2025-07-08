@@ -1519,23 +1519,26 @@ logger:
                 
                 # Wait for uesimtun interface to be created
                 f.write(f'    # Wait for uesimtun0 interface to be created on {ue_name}\n')
+                f.write(f'    ue_found = False\n')
                 f.write(f'    for i in range(30):\n')
                 f.write(f'        result = {ue_name}.cmd("ip link show uesimtun0 2>/dev/null")\n')
                 f.write(f'        if result and "uesimtun0" in result:\n')
+                f.write(f'            ue_found = True\n')
                 f.write(f'            break\n')
                 f.write(f'        CLI.do_sh(net, "sleep 1")\n')
-                f.write(f'    else:\n')
-                f.write(f'        print("Warning: uesimtun0 interface not found on {ue_name}")\n')
-                f.write(f'        continue\n')
                 f.write(f'    \n')
+                f.write(f'    if not ue_found:\n')
+                f.write(f'        print("Warning: uesimtun0 interface not found on {ue_name}")\n')
+                f.write(f'    else:\n')
+                f.write(f'        # Configure routes for {ue_name}\n')
                 
                 # Route based on APN
                 if apn == 'internet':
-                    f.write(f'    {ue_name}.cmd("ip route add 10.45.0.0/16 dev uesimtun0")\n')
+                    f.write(f'        {ue_name}.cmd("ip route add 10.45.0.0/16 dev uesimtun0")\n')
                 elif apn == 'internet2':
-                    f.write(f'    {ue_name}.cmd("ip route add 10.46.0.0/16 dev uesimtun0")\n')
+                    f.write(f'        {ue_name}.cmd("ip route add 10.46.0.0/16 dev uesimtun0")\n')
                 else:
-                    f.write(f'    {ue_name}.cmd("ip route add 10.45.0.0/16 dev uesimtun0")\n')
+                    f.write(f'        {ue_name}.cmd("ip route add 10.45.0.0/16 dev uesimtun0")\n')
             f.write('\n')
         
         # Add CLI startup
