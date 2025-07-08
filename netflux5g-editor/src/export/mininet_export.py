@@ -1609,7 +1609,7 @@ logger:
             f.write('    print("test_ue_connectivity() - Test connectivity through UE interfaces")\n')
             f.write('    print("Example: In CLI, type: py check_ue_interfaces()")\n')
             f.write('    print("Example: In CLI, type: py test_ue_connectivity()")\n')
-            f.write('    print("Example: Check specific UE: UE_1.cmd(\\\\"ip addr show uesimtun0\\\\")")\n\n')
+            f.write('    print("Example: Check specific UE: UE_1.cmd(\'ip addr show uesimtun0\')")\n\n')
         
         # Add CLI startup
         f.write('    info("*** Running CLI\\n")\n')
