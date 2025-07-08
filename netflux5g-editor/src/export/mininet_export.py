@@ -306,9 +306,31 @@ class MininetExporter:
         f.write('        print("Note: Containers may fail to start if Docker is not available")\n')
         f.write('\n')
         
-
-        
-
+        f.write('def check_docker_image(image_name):\n')
+        f.write('    """Check if Docker image exists locally or can be pulled."""\n')
+        f.write('    import subprocess\n')
+        f.write('    try:\n')
+        f.write('        # Check if image exists locally\n')
+        f.write('        result = subprocess.run(["docker", "images", "-q", image_name], \n')
+        f.write('                              capture_output=True, text=True, check=True)\n')
+        f.write('        if result.stdout.strip():\n')
+        f.write('            return True\n')
+        f.write('        \n')
+        f.write('        # Try to pull the image\n')
+        f.write('        print(f"*** Pulling Docker image: {image_name}")\n')
+        f.write('        pull_result = subprocess.run(["docker", "pull", image_name], \n')
+        f.write('                                   capture_output=True, text=True, check=True)\n')
+        f.write('        print(f"*** Successfully pulled: {image_name}")\n')
+        f.write('        return True\n')
+        f.write('    except subprocess.CalledProcessError as e:\n')
+        f.write('        print(f"*** Warning: Cannot pull image {image_name}: {e}")\n')
+        f.write('        if e.stderr:\n')
+        f.write('            print(f"*** Error details: {e.stderr.strip()}")\n')
+        f.write('        return False\n')
+        f.write('    except FileNotFoundError:\n')
+        f.write('        print("*** Warning: Docker command not found")\n')
+        f.write('        return False\n')
+        f.write('\n')
 
     def create_config_files(self, script_path, categorized_nodes):
         """Create config directory and generate/copy necessary config files for 5G components."""
@@ -790,21 +812,46 @@ logger:
         # Write gNBs following the enhanced pattern with AP support
         if categorized_nodes['gnbs']:
             f.write('    info("*** Add gNB\\n")\n')
+            
+            # Check for required Docker images before creating gNBs
+            f.write('    # Check for required Docker images\n')
+            f.write('    ueransim_image = "adaptive/ueransim:latest"\n')
+            f.write('    if CONTAINERNET_AVAILABLE and not check_docker_image(ueransim_image):\n')
+            f.write('        print("*** Warning: UERANSIM image not available. Trying alternative images...")\n')
+            f.write('        # Try alternative image names\n')
+            f.write('        alternative_images = ["ueransim:latest", "open5gs/ueransim:latest", "ghcr.io/aligungr/ueransim:latest"]\n')
+            f.write('        ueransim_image_found = False\n')
+            f.write('        for alt_image in alternative_images:\n')
+            f.write('            if check_docker_image(alt_image):\n')
+            f.write('                ueransim_image = alt_image\n')
+            f.write('                ueransim_image_found = True\n')
+            f.write('                print(f"*** Using alternative image: {alt_image}")\n')
+            f.write('                break\n')
+            f.write('        if not ueransim_image_found:\n')
+            f.write('            print("*** Error: No suitable UERANSIM image found!")\n')
+            f.write('            print("*** Please ensure UERANSIM Docker image is available:")\n')
+            f.write('            print("***   docker pull adaptive/ueransim:latest")\n')
+            f.write('            print("*** Skipping gNB creation...")\n')
+            f.write('    else:\n')
+            f.write('        ueransim_image_found = True\n')
+            f.write('    \n')
+            f.write('    if ueransim_image_found or not CONTAINERNET_AVAILABLE:\n')
+            
             for i, gnb in enumerate(categorized_nodes['gnbs'], 1):
                 props = gnb.get('properties', {})
                 gnb_name = self.sanitize_variable_name(gnb['name'])
                 
                 # Build gNB parameters following the enhanced pattern
-                f.write(f'    # Build gNB parameters\n')
-                f.write(f'    gnb_kwargs = {{}}\n')
-                f.write(f'    if CONTAINERNET_AVAILABLE:\n')
-                f.write(f'        gnb_kwargs.update({{\n')
-                f.write(f'            "dimage": "adaptive/ueransim:latest",\n')
-                f.write(f'            "dcmd": "/bin/bash",\n')
-                f.write(f'            "cap_add": ["net_admin"],\n')
-                f.write(f'            "network_mode": NETWORK_MODE,\n')
-                f.write(f'            "publish_all_ports": True,\n')
-                f.write(f'            "privileged": True,\n')
+                f.write(f'        # Build gNB parameters\n')
+                f.write(f'        gnb_kwargs = {{}}\n')
+                f.write(f'        if CONTAINERNET_AVAILABLE:\n')
+                f.write(f'            gnb_kwargs.update({{\n')
+                f.write(f'                "dimage": ueransim_image,\n')
+                f.write(f'                "dcmd": "/bin/bash",\n')
+                f.write(f'                "cap_add": ["net_admin"],\n')
+                f.write(f'                "network_mode": NETWORK_MODE,\n')
+                f.write(f'                "publish_all_ports": True,\n')
+                f.write(f'                "privileged": True,\n')
                 
                 # Add volumes for host hardware access (needed for AP functionality)
                 volumes = [
@@ -812,7 +859,7 @@ logger:
                     '"/lib/modules:/lib/modules"',
                     '"/sys/kernel/debug:/sys/kernel/debug"'
                 ]
-                f.write(f'            "volumes": [{", ".join(volumes)}],\n')
+                f.write(f'                "volumes": [{", ".join(volumes)}],\n')
                 
                 # Get enhanced configuration from ConfigurationMapper
                 from manager.configmap import ConfigurationMapper
@@ -840,50 +887,75 @@ logger:
                 
                 # Format environment like in the original
                 env_str = str(env_dict).replace("'", '"')
-                f.write(f'            "environment": {env_str}\n')
-                f.write(f'        }})\n')
-                f.write(f'    elif WIFI_AVAILABLE:\n')
-                f.write(f'        # mininet-wifi parameters\n')
-                f.write(f'        gnb_kwargs.update({{\n')
+                f.write(f'                "environment": {env_str}\n')
+                f.write(f'            }})\n')
+                f.write(f'        elif WIFI_AVAILABLE:\n')
+                f.write(f'            # mininet-wifi parameters\n')
+                f.write(f'            gnb_kwargs.update({{\n')
                 
                 # Add position
                 position = f"{gnb.get('x', 0):.1f},{gnb.get('y', 0):.1f},0"
-                f.write(f'            "position": "{position}",\n')
+                f.write(f'                "position": "{position}",\n')
                 
                 # Add range (default 300 if not specified)
                 range_val = gnb_config.get('range', 300)
-                f.write(f'            "range": {range_val},\n')
+                f.write(f'                "range": {range_val},\n')
                 
                 # Add txpower if specified (default 30)
                 txpower = gnb_config.get('txpower', 30)
-                f.write(f'            "txpower": {txpower}\n')
-                f.write(f'        }})\n')
-                f.write(f'    else:\n')
-                f.write(f'        # Standard Mininet parameters\n')
-                f.write(f'        gnb_kwargs.update({{\n')
-                f.write(f'            "cls": Host\n')
-                f.write(f'        }})\n')
+                f.write(f'                "txpower": {txpower}\n')
+                f.write(f'            }})\n')
+                f.write(f'        else:\n')
+                f.write(f'            # Standard Mininet parameters\n')
+                f.write(f'            gnb_kwargs.update({{\n')
+                f.write(f'                "cls": Host\n')
+                f.write(f'            }})\n')
                 
-                f.write(f'    {gnb_name} = add_node_to_network(net, \'{gnb_name}\', **gnb_kwargs)\n')
+                f.write(f'        {gnb_name} = add_node_to_network(net, \'{gnb_name}\', **gnb_kwargs)\n')
             f.write('\n')
         
         # Write UEs following the exact pattern from fixed_topology-upf.py
         if categorized_nodes['ues']:
             f.write('    info("*** Adding docker UE hosts\\n")\n')
+            
+            # Check for required UE Docker images
+            f.write('    # Check for required UE Docker images\n')
+            f.write('    ue_image = "gradiant/ueransim:3.2.6"\n')
+            f.write('    if CONTAINERNET_AVAILABLE and not check_docker_image(ue_image):\n')
+            f.write('        print("*** Warning: Gradiant UERANSIM UE image not available. Trying alternatives...")\n')
+            f.write('        # Try alternative UE image names\n')
+            f.write('        ue_alternatives = ["adaptive/ueransim:latest", "ueransim:latest", "open5gs/ueransim:latest"]\n')
+            f.write('        ue_image_found = False\n')
+            f.write('        for alt_image in ue_alternatives:\n')
+            f.write('            if check_docker_image(alt_image):\n')
+            f.write('                ue_image = alt_image\n')
+            f.write('                ue_image_found = True\n')
+            f.write('                print(f"*** Using alternative UE image: {alt_image}")\n')
+            f.write('                break\n')
+            f.write('        if not ue_image_found:\n')
+            f.write('            print("*** Error: No suitable UERANSIM UE image found!")\n')
+            f.write('            print("*** Please ensure UERANSIM UE Docker image is available:")\n')
+            f.write('            print("***   docker pull gradiant/ueransim:3.2.6")\n')
+            f.write('            print("*** Skipping UE creation...")\n')
+            f.write('    else:\n')
+            f.write('        ue_image_found = True\n')
+            f.write('    \n')
+            f.write('    if ue_image_found or not CONTAINERNET_AVAILABLE:\n')
+            
             for i, ue in enumerate(categorized_nodes['ues'], 1):
                 props = ue.get('properties', {})
                 ue_name = self.sanitize_variable_name(ue['name'])
                 
                 # Build UE parameters following the exact pattern
-                f.write(f'    # Build UE parameters\n')
-                f.write(f'    ue_kwargs = {{}}\n')
-                f.write(f'    if CONTAINERNET_AVAILABLE:\n')
-                f.write(f'        ue_kwargs.update({{\n')
-                f.write(f'            "dimage": "gradiant/ueransim:3.2.6",\n')
-                f.write(f'            "dcmd": "/bin/bash",\n')
-                f.write(f'            "devices": ["/dev/net/tun"],\n')
-                f.write(f'            "cap_add": ["net_admin"],\n')
-                f.write(f'            "network_mode": NETWORK_MODE,\n')
+                f.write(f'        # Build UE parameters\n')
+                f.write(f'        ue_kwargs = {{}}\n')
+                f.write(f'        if CONTAINERNET_AVAILABLE:\n')
+                f.write(f'            ue_kwargs.update({{\n')
+                f.write(f'                "dimage": ue_image,\n')
+                f.write(f'                "dcmd": "/bin/bash",\n')
+                f.write(f'                "devices": ["/dev/net/tun"],\n')
+                f.write(f'                "cap_add": ["net_admin"],\n')
+                f.write(f'                "network_mode": NETWORK_MODE,\n')
                 
                 # Add enhanced power and range configuration from ConfigurationMapper
                 from manager.configmap import ConfigurationMapper
@@ -929,35 +1001,35 @@ logger:
                 
                 # Format environment like in the original
                 env_str = str(env_dict).replace("'", '"')
-                f.write(f'            "environment": {env_str}\n')
-                f.write(f'        }})\n')
-                f.write(f'    elif WIFI_AVAILABLE:\n')
-                f.write(f'        # mininet-wifi parameters\n')
-                f.write(f'        ue_kwargs.update({{\n')
+                f.write(f'                "environment": {env_str}\n')
+                f.write(f'            }})\n')
+                f.write(f'        elif WIFI_AVAILABLE:\n')
+                f.write(f'            # mininet-wifi parameters\n')
+                f.write(f'            ue_kwargs.update({{\n')
                 
                 # Add range (default 116 if not specified)
                 range_val = ue_config.get('range', 116)
-                f.write(f'            "range": {range_val},\n')
+                f.write(f'                "range": {range_val},\n')
                 
                 # Add txpower if specified
                 if 'txpower' in ue_config:
-                    f.write(f'            "txpower": {ue_config["txpower"]},\n')
+                    f.write(f'                "txpower": {ue_config["txpower"]},\n')
                 
                 # Add association mode if specified
                 if 'association' in ue_config and ue_config['association'] != 'auto':
-                    f.write(f'            "associationMode": "{ue_config["association"]}",\n')
+                    f.write(f'                "associationMode": "{ue_config["association"]}",\n')
                 
                 # Add position
                 position = f"{ue.get('x', 0):.1f},{ue.get('y', 0):.1f},0"
-                f.write(f'            "position": "{position}"\n')
-                f.write(f'        }})\n')
-                f.write(f'    else:\n')
-                f.write(f'        # Standard Mininet parameters\n')
-                f.write(f'        ue_kwargs.update({{\n')
-                f.write(f'            "cls": Host\n')
-                f.write(f'        }})\n')
+                f.write(f'                "position": "{position}"\n')
+                f.write(f'            }})\n')
+                f.write(f'        else:\n')
+                f.write(f'            # Standard Mininet parameters\n')
+                f.write(f'            ue_kwargs.update({{\n')
+                f.write(f'                "cls": Host\n')
+                f.write(f'            }})\n')
                 
-                f.write(f'    {ue_name} = add_node_to_network(net, \'{ue_name}\', **ue_kwargs)\n')
+                f.write(f'        {ue_name} = add_node_to_network(net, \'{ue_name}\', **ue_kwargs)\n')
             f.write('\n')
         
         if categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']:
