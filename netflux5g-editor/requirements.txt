@@ -1,2 +1,19 @@
-PyQt5
-PyYAML
+# Core GUI dependencies
+PyQt5>=5.15.0
+PyYAML>=5.4.0
+
+# Network and automation dependencies
+docker>=5.0.0
+requests>=2.25.0
+matplotlib>=3.3.0
+networkx>=2.5
+
+# Optional: For enhanced networking support
+scapy>=2.4.5
+psutil>=5.8.0
+
+# Development and debugging
+ipython>=7.0.0
+
+# Note: Mininet-WiFi and Containernet need to be installed separately
+# Run: python3 setup_dependencies.py for automated setup
