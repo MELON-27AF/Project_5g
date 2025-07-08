@@ -1417,7 +1417,17 @@ logger:
         # Add capture script execution like in original
         f.write('    info("*** Capture all initialization flow and slice packet\\n")\n')
         f.write('    Capture1 = cwd + "/capture-initialization-fixed.sh"\n')
-        f.write('    CLI(net, script=Capture1)\n\n')
+        f.write('    # Check if capture script exists and run it properly\n')
+        f.write('    if os.path.exists(Capture1):\n')
+        f.write('        try:\n')
+        f.write('            with open(Capture1, "r") as script_file:\n')
+        f.write('                CLI(net, script=script_file)\n')
+        f.write('        except Exception as e:\n')
+        f.write('            print(f"Warning: Error running capture script: {e}")\n')
+        f.write('            CLI(net)\n')
+        f.write('    else:\n')
+        f.write('        print(f"Warning: Capture script not found: {Capture1}")\n')
+        f.write('        CLI(net)\n\n')
 
         f.write('    CLI.do_sh(net, "sleep 20")\n\n')
 
