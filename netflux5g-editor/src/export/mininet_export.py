@@ -815,11 +815,11 @@ logger:
             
             # Check for required Docker images before creating gNBs
             f.write('    # Check for required Docker images\n')
-            f.write('    ueransim_image = "adaptive/ueransim:latest"\n')
+            f.write('    ueransim_image = "free5gmano/ueransim:latest"\n')
             f.write('    if CONTAINERNET_AVAILABLE and not check_docker_image(ueransim_image):\n')
-            f.write('        print("*** Warning: UERANSIM image not available. Trying alternative images...")\n')
+            f.write('        print("*** Warning: Free5GMANO UERANSIM image not available. Trying alternative images...")\n')
             f.write('        # Try alternative image names\n')
-            f.write('        alternative_images = ["ueransim:latest", "open5gs/ueransim:latest", "ghcr.io/aligungr/ueransim:latest"]\n')
+            f.write('        alternative_images = ["adaptive/ueransim:latest", "ueransim:latest", "open5gs/ueransim:latest", "ghcr.io/aligungr/ueransim:latest"]\n')
             f.write('        ueransim_image_found = False\n')
             f.write('        for alt_image in alternative_images:\n')
             f.write('            if check_docker_image(alt_image):\n')
@@ -830,7 +830,7 @@ logger:
             f.write('        if not ueransim_image_found:\n')
             f.write('            print("*** Error: No suitable UERANSIM image found!")\n')
             f.write('            print("*** Please ensure UERANSIM Docker image is available:")\n')
-            f.write('            print("***   docker pull adaptive/ueransim:latest")\n')
+            f.write('            print("***   docker pull free5gmano/ueransim:latest")\n')
             f.write('            print("*** Skipping gNB creation...")\n')
             f.write('    else:\n')
             f.write('        ueransim_image_found = True\n')
@@ -924,7 +924,7 @@ logger:
             f.write('    if CONTAINERNET_AVAILABLE and not check_docker_image(ue_image):\n')
             f.write('        print("*** Warning: Gradiant UERANSIM UE image not available. Trying alternatives...")\n')
             f.write('        # Try alternative UE image names\n')
-            f.write('        ue_alternatives = ["adaptive/ueransim:latest", "ueransim:latest", "open5gs/ueransim:latest"]\n')
+            f.write('        ue_alternatives = ["free5gmano/ueransim:latest", "adaptive/ueransim:latest", "ueransim:latest", "open5gs/ueransim:latest"]\n')
             f.write('        ue_image_found = False\n')
             f.write('        for alt_image in ue_alternatives:\n')
             f.write('            if check_docker_image(alt_image):\n')
@@ -1534,6 +1534,11 @@ logger:
             if dest_name in ["VGcore__1", "VGCore__1", "VGcore_1", "VGCore_1"]:
                 dest_name = "amf1"
             
+            # Add safety check for node existence
+            f.write(f'    # Create link between {source_name} and {dest_name}\n')
+            f.write(f'    try:\n')
+            f.write(f'        if "{source_name}" in locals() and "{dest_name}" in locals():\n')
+            
             # Build link parameters
             link_params = [source_name, dest_name]
             
@@ -1546,7 +1551,12 @@ logger:
             if link_props.get('loss'):
                 link_params.append(f"loss={link_props['loss']}")
             
-            f.write(f'    net.addLink({", ".join(link_params)})\n')
+            f.write(f'            net.addLink({", ".join(link_params)})\n')
+            f.write(f'        else:\n')
+            f.write(f'            print(f"*** Warning: Skipping link - one or both nodes not created: {source_name}, {dest_name}")\n')
+            f.write(f'    except Exception as e:\n')
+            f.write(f'        print(f"*** Error creating link between {source_name} and {dest_name}: {{e}}")\n')
+            f.write(f'    \n')
         f.write('\n')
 
     def write_plot_graph(self, f, categorized_nodes):
