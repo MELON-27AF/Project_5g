@@ -229,6 +229,14 @@ class MininetExporter:
         f.write('        clean_name = \'_\' + clean_name\n')
         f.write('    return clean_name or \'node\'\n\n')
         
+        f.write('def add_node_to_network(net, node_name, *args, **kwargs):\n')
+        f.write('    """Add node to network using appropriate method based on network type."""\n')
+        f.write('    if hasattr(net, \'addStation\'):\n')
+        f.write('        # mininet-wifi is available, use addStation\n')
+        f.write('        return net.addStation(node_name, *args, **kwargs)\n')
+        f.write('    else:\n')
+        f.write('        # Standard Mininet, use addHost\n')
+        f.write('        return net.addHost(node_name, *args, **kwargs)\n\n')
         
         # Add Docker network utility functions if needed
         if hasattr(self.main_window, 'docker_network_manager'):
@@ -456,7 +464,7 @@ class MininetExporter:
             sta_opts = ConfigurationMapper.map_sta_config(props)
             sta_params.extend(sta_opts)
             
-            f.write(f'    {sta_name} = net.addStation({", ".join(sta_params)})\n')
+            f.write(f'    {sta_name} = add_node_to_network(net, {", ".join(sta_params)})\n')
         f.write('\n')
 
     def write_hosts(self, f, categorized_nodes):
@@ -697,7 +705,7 @@ class MininetExporter:
                 f.write(f'            \'position="{position}"\'\n')
                 f.write(f'        ])\n')
                 
-                f.write(f'    {gnb_name} = net.addStation(*gnb_params)\n')
+                f.write(f'    {gnb_name} = add_node_to_network(net, *gnb_params)\n')
             f.write('\n')
         
         # Write UEs following the exact pattern from fixed_topology-upf.py
@@ -789,7 +797,7 @@ class MininetExporter:
                 f.write(f'            \'position="{position}"\'\n')
                 f.write(f'        ])\n')
                 
-                f.write(f'    {ue_name} = net.addStation(*ue_params)\n')
+                f.write(f'    {ue_name} = add_node_to_network(net, *ue_params)\n')
             f.write('\n')
         
         if categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']:
@@ -1048,7 +1056,7 @@ class MininetExporter:
                     f.write(f'            \'position="{position}"\'\n')
                     f.write(f'        ])\n')
                     
-                    f.write(f'    {comp_name} = net.addStation(*comp_params)\n')
+                    f.write(f'    {comp_name} = add_node_to_network(net, *comp_params)\n')
         
         f.write('\n')
 
