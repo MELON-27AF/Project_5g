@@ -920,7 +920,7 @@ logger:
                     '"/sys:/sys"',
                     '"/lib/modules:/lib/modules"',
                     '"/sys/kernel/debug:/sys/kernel/debug"',
-                    'cwd + "/config:/config:ro"',
+                    'cwd + "/config:/config"',
                     'cwd + "/logging:/logging"'
                 ]
                 f.write(f'                "volumes": [{", ".join(volumes)}],\n')
@@ -1023,7 +1023,7 @@ logger:
                 f.write(f'                "devices": ["/dev/net/tun"],\n')
                 f.write(f'                "cap_add": ["net_admin"],\n')
                 f.write(f'                "network_mode": NETWORK_MODE,\n')
-                f.write(f'                "volumes": [cwd + "/config:/config:ro", cwd + "/logging:/logging"],\n')
+                f.write(f'                "volumes": [cwd + "/config:/config", cwd + "/logging:/logging"],\n')
                 
                 # Add enhanced power and range configuration from ConfigurationMapper
                 from manager.configmap import ConfigurationMapper
@@ -1501,6 +1501,30 @@ logger:
         # Start UEs
         if categorized_nodes['ues']:
             f.write('    info("*** Post configure Docker UE nodes\\n")\n')
+            
+            # First, update UE configurations with actual gNB IP addresses
+            if categorized_nodes['gnbs']:
+                f.write('    # Update UE configurations with actual gNB IP addresses\n')
+                for gnb in categorized_nodes['gnbs']:
+                    gnb_name = self.sanitize_variable_name(gnb['name'])
+                    f.write(f'    gnb_ip = {gnb_name}.IP()\n')
+                    f.write(f'    print(f"gNB {gnb_name} IP: {{gnb_ip}}")\n')
+                    
+                    # Update all UE config files with this gNB IP
+                    for ue in categorized_nodes['ues']:
+                        ue_name = self.sanitize_variable_name(ue['name'])
+                        config_file = f"{ue_name}.yaml"
+                        # Replace placeholder with actual gNB IP
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \'s/GNB_CONTAINER_IP_PLACEHOLDER/{{gnb_ip}}/g\' /config/{config_file}")\n')
+                        # Also replace any remaining hardcoded IPs
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \'s/10.0.0.1/{{gnb_ip}}/g\' /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \'s/127.0.0.1/{{gnb_ip}}/g\' /config/{config_file}")\n')
+                        # Verify the change
+                        f.write(f'    updated_ip = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file} | tail -1 | tr -d \' -\'")\n')
+                        f.write(f'    print(f"Updated {ue_name} gNB IP to: {{updated_ip}}")\n')
+                    break  # Use first gNB IP for all UEs
+                f.write('\\n')
+            
             for ue in categorized_nodes['ues']:
                 ue_name = self.sanitize_variable_name(ue['name'])
                 # Use specific UE configuration file for each UE
@@ -1974,14 +1998,13 @@ logger:
     def generate_ue_config_content(self, ue_config, ue_index):
         """Generate UE configuration content from template."""
         
-        # Get gNB IP - use configured IP or fallback to default
-        gnb_ip = ue_config.get('gnb_ip', '127.0.0.1')
+        # Get gNB IP - use configured IP or use placeholder for runtime replacement
+        gnb_ip = ue_config.get('gnb_ip')
         
-        # If no specific gNB IP is configured, try to find a gNB in the topology
-        if gnb_ip == '127.0.0.1':
-            # This is a fallback - the actual gNB IP should be configured in the UI
-            # For now, we'll use a sensible default based on the Mininet IP range
-            gnb_ip = '10.0.0.1'  # Default gNB IP in Mininet range
+        # If no specific gNB IP is configured, use a placeholder that will be replaced at runtime
+        if not gnb_ip or gnb_ip in ['127.0.0.1', '10.0.0.1', 'localhost']:
+            # Use a unique placeholder that will be replaced with actual gNB IP
+            gnb_ip = 'GNB_CONTAINER_IP_PLACEHOLDER'
         
         template_content = f"""# IMSI number of the UE. IMSI = [MCC|MNC|MSISDN] (In total 15 or 16 digits)
 supi: 'imsi-{ue_config.get('mcc', '999')}{ue_config.get('mnc', '70')}{ue_config.get('msisdn', f'000000000{ue_index:01d}')}'
@@ -2061,6 +2084,10 @@ integrityMaxRate:
     
     def generate_gnb_config_content(self, gnb_config, gnb_index):
         """Generate gNB configuration content from template."""
+        
+        # Get AMF IP - use configured IP or default to container networking
+        amf_ip = gnb_config.get('amf_ip', '172.18.0.10')  # Default AMF container IP
+        
         template_content = f"""# gNB identification
 nci: {gnb_config.get('nci', '0x000000010')}
 idLength: {gnb_config.get('id_length', '32')}
@@ -2073,7 +2100,7 @@ gnbSearchList: []
 
 # List of AMF addresses for Registration
 amfConfigs:
-  - address: {gnb_config.get('amf_ip', '127.0.0.1')}
+  - address: {amf_ip}
     port: {gnb_config.get('amf_port', '38412')}
 
 # List of supported S-NSSAIs by this gNB
@@ -2084,10 +2111,10 @@ slices:
 # Indication of ignoring stream ids of SCTP connections
 ignoreStreamIds: true
 
-# gNB NGAP bind address
+# gNB NGAP bind address (listen on all interfaces)
 ngapIp: 0.0.0.0
 
-# gNB GTP-U bind address
+# gNB GTP-U bind address (listen on all interfaces)
 gtpIp: 0.0.0.0
 
 # Supported encryption algorithms by this gNB
@@ -2121,5 +2148,11 @@ servedCells:
       mcc: '{gnb_config.get('mcc', '999')}'
       mnc: '{gnb_config.get('mnc', '70')}'
       nrCellId: {gnb_config.get('cell_id', '0x000000001')}
+
+# RAN UE usage indicator
+ranUeUsageIndication: false
+
+# Indicates whether periodic registration update is disabled
+disablePeriodicRegistration: false
 """
         return template_content
