@@ -439,8 +439,12 @@ logger:
         if hasattr(self.main_window, 'docker_network_manager'):
             dynamic_network_name = self.main_window.docker_network_manager.get_current_network_name()
         
-        # Add Docker network setup if needed
-        if dynamic_network_name:
+        # Add Docker network setup for any Docker components
+        has_docker_components = (categorized_nodes.get('core5g') or 
+                               categorized_nodes.get('docker_hosts') or
+                               any(categorized_nodes.get('core5g_components', {}).values()))
+        
+        if has_docker_components:
             f.write('    \n')
             f.write('    # Setup Docker network\n')
             f.write('    info("*** Setting up Docker network\\n")\n')
