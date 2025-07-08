@@ -1514,10 +1514,14 @@ logger:
                     for ue in categorized_nodes['ues']:
                         ue_name = self.sanitize_variable_name(ue['name'])
                         config_file = f"{ue_name}.yaml"
-                        # Replace placeholder with actual gNB IP
-                        f.write(f'    result = {ue_name}.cmd(f"sed -i \'s/GNB_CONTAINER_IP_PLACEHOLDER/{{gnb_ip}}/g\' /config/{config_file}")\n')
+                        # Replace placeholder with actual gNB IP using double quotes for variable expansion
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/GNB_CONTAINER_IP_PLACEHOLDER/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         # Also replace any remaining hardcoded IPs
-                        f.write(f'    result = {ue_name}.cmd(f"sed -i \'s/10.0.0.1/{{gnb_ip}}/g\' /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/10.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
+                        f.write(f'    print(f"Updated {ue_name} config with gNB IP: {{gnb_ip}}")\n')
+                        # Verify the change
+                        f.write(f'    verify = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file}")\n')
+                        f.write(f'    print(f"Verification for {ue_name}: {{verify}}")\n')
                         f.write(f'    result = {ue_name}.cmd(f"sed -i \'s/127.0.0.1/{{gnb_ip}}/g\' /config/{config_file}")\n')
                         # Verify the change
                         f.write(f'    updated_ip = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file} | tail -1 | tr -d \' -\'")\n')
@@ -2085,11 +2089,11 @@ integrityMaxRate:
     def generate_gnb_config_content(self, gnb_config, gnb_index):
         """Generate gNB configuration content from template."""
         
-        # Get AMF IP - use configured IP or default to container networking
-        amf_ip = gnb_config.get('amf_ip', '172.18.0.10')  # Default AMF container IP
+        # Use placeholder for AMF IP that will be replaced at runtime
+        amf_ip = gnb_config.get('amf_ip', 'AMF_CONTAINER_IP_PLACEHOLDER')
         
         template_content = f"""# gNB identification
-nci: {gnb_config.get('nci', '0x000000010')}
+nci: {gnb_config.get('nci', f'0x00000001{gnb_index}')}
 idLength: {gnb_config.get('id_length', '32')}
 tac: {gnb_config.get('tac', '1')}
 mcc: '{gnb_config.get('mcc', '999')}'
@@ -2114,10 +2118,42 @@ ignoreStreamIds: true
 # gNB NGAP bind address (listen on all interfaces)
 ngapIp: 0.0.0.0
 
-# gNB GTP-U bind address (listen on all interfaces)
+# gNB GTP-U bind address (listen on all interfaces)  
 gtpIp: 0.0.0.0
 
 # Supported encryption algorithms by this gNB
+supportedEncryption:
+  - NEA0
+  - NEA1
+  - NEA2
+  - NEA3
+
+# Supported integrity algorithms by this gNB
+supportedIntegrity:
+  - NIA0
+  - NIA1
+  - NIA2
+  - NIA3
+
+# Paging DRX cycle
+pagingDrx: v32
+
+# Served cells information
+servedCells:
+  - cellId: {gnb_config.get('cell_id', f'0x00000000{gnb_index}')}
+    tac: {gnb_config.get('tac', '1')}
+    broadcastPlmns:
+      - mcc: '{gnb_config.get('mcc', '999')}'
+        mnc: '{gnb_config.get('mnc', '70')}'
+        taiSliceSupportList:
+          - sst: {gnb_config.get('sst', '1')}
+            sd: {gnb_config.get('sd', '0xffffff')}
+    nrCgi:
+      mcc: '{gnb_config.get('mcc', '999')}'
+      mnc: '{gnb_config.get('mnc', '70')}'
+      nrCellId: {gnb_config.get('cell_id', f'0x00000000{gnb_index}')}
+"""
+        return template_content
 supportedEncryption:
   - NEA0
   - NEA1
