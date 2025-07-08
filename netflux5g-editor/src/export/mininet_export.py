@@ -556,7 +556,18 @@ logger:
         f.write('        print("\\n=== Node Interface Debug ===")\n')
         f.write('        for node in net.values():\n')
         f.write('            if hasattr(node, "name"):\n')
-        f.write('                print(f"{node.name}: {list(node.intfNames())}")\n')
+        f.write('                intfs = list(node.intfNames()) if hasattr(node, "intfNames") else []\n')
+        f.write('                node_type = type(node).__name__\n')
+        f.write('                print(f"{node.name} ({node_type}): {intfs}")\n')
+        f.write('    \n')
+        
+        f.write('    def debug_network_mode():\n')
+        f.write('        """Debug function to check network capabilities"""\n')
+        f.write('        print("\\n=== Network Mode Debug ===")\n')
+        f.write('        print(f"CONTAINERNET_AVAILABLE: {CONTAINERNET_AVAILABLE}")\n')
+        f.write('        print(f"WIFI_AVAILABLE: {WIFI_AVAILABLE}")\n')
+        f.write('        print(f"Network type: {type(net).__name__}")\n')
+        f.write('        print(f"NETWORK_MODE: {NETWORK_MODE}")\n')
         f.write('    \n')
         
         # Initialize network
@@ -590,12 +601,16 @@ logger:
         f.write('    info("*** Creating links\\n")\n')
         self.write_links(f, links, categorized_nodes)
         
-        # Add default links for 5G components if no links are defined
-        if not links and (categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']):
+        # Add default links for 5G components if no explicit links are defined
+        has_5g_components = bool(categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g'])
+        has_switches_or_aps = bool(categorized_nodes['aps'] or categorized_nodes['switches'])
+        
+        f.write(f'    # Debug: has_5g_components={has_5g_components}, has_switches_or_aps={has_switches_or_aps}, links={len(links) if links else 0}\n')
+        
+        if has_5g_components and not has_switches_or_aps:
             f.write('    # Add default connectivity for 5G components\n')
-            f.write('    # Create a default switch for connectivity\n')
-            f.write('    if not any(categorized_nodes.get(t) for t in ["aps", "switches"]):\n')
-            f.write('        default_switch = net.addSwitch("s1", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
+            f.write('    print("*** Creating default switch for 5G component connectivity")\n')
+            f.write('    default_switch = net.addSwitch("s1", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
             
             # Connect all 5G core components to the switch
             core_components = categorized_nodes.get('core5g_components', {})
@@ -606,17 +621,29 @@ logger:
                     all_core_names.append(comp_name)
             
             for comp_name in all_core_names:
-                f.write(f'        if "{comp_name}" in locals(): net.addLink(default_switch, {comp_name})\n')
+                f.write(f'    try:\n')
+                f.write(f'        net.addLink(default_switch, {comp_name})\n')
+                f.write(f'        print(f"*** Connected {{default_switch.name}} to {comp_name}")\n')
+                f.write(f'    except Exception as e:\n')
+                f.write(f'        print(f"*** Warning: Failed to connect {comp_name}: {{e}}")\n')
             
             # Connect gNBs to the switch
             for gnb in categorized_nodes['gnbs']:
                 gnb_name = self.sanitize_variable_name(gnb['name'])
-                f.write(f'        if "{gnb_name}" in locals(): net.addLink(default_switch, {gnb_name})\n')
+                f.write(f'    try:\n')
+                f.write(f'        net.addLink(default_switch, {gnb_name})\n')
+                f.write(f'        print(f"*** Connected {{default_switch.name}} to {gnb_name}")\n')
+                f.write(f'    except Exception as e:\n')
+                f.write(f'        print(f"*** Warning: Failed to connect {gnb_name}: {{e}}")\n')
             
             # Connect UEs to the switch  
             for ue in categorized_nodes['ues']:
                 ue_name = self.sanitize_variable_name(ue['name'])
-                f.write(f'        if "{ue_name}" in locals(): net.addLink(default_switch, {ue_name})\n')
+                f.write(f'    try:\n')
+                f.write(f'        net.addLink(default_switch, {ue_name})\n')
+                f.write(f'        print(f"*** Connected {{default_switch.name}} to {ue_name}")\n')
+                f.write(f'    except Exception as e:\n')
+                f.write(f'        print(f"*** Warning: Failed to connect {ue_name}: {{e}}")\n')
             f.write('\n')
         
         # Add plot for wireless networks
@@ -626,7 +653,8 @@ logger:
         f.write('    info("*** Starting network\\n")\n')
         f.write('    net.build()\n')
         f.write('    \n')
-        f.write('    # Debug: Check node interfaces after build\n')
+        f.write('    # Debug: Check network mode and node interfaces after build\n')
+        f.write('    debug_network_mode()\n')
         f.write('    debug_node_interfaces()\n')
         f.write('    \n')
         self.write_controller_startup(f, categorized_nodes)
