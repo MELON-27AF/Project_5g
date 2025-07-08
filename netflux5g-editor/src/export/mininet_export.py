@@ -196,10 +196,21 @@ class MininetExporter:
             f.write('    interference = None\n')
         
         if has_docker:
-            # Import containernet components for Docker/5G support
-            f.write('from containernet.cli import CLI\n')
-            f.write('from containernet.node import DockerSta\n')
-            f.write('from containernet.term import makeTerm as makeTerm2\n')
+            # Import containernet components for Docker/5G support with compatibility handling
+            f.write('# Import containernet with compatibility handling\n')
+            f.write('try:\n')
+            f.write('    from containernet.cli import CLI\n')
+            f.write('    from containernet.node import DockerSta\n')
+            f.write('    from containernet.term import makeTerm as makeTerm2\n')
+            f.write('    CONTAINERNET_AVAILABLE = True\n')
+            f.write('except ImportError as e:\n')
+            f.write('    print(f"Warning: containernet import failed: {e}")\n')
+            f.write('    print("Falling back to standard Mininet for Docker components")\n')
+            f.write('    CONTAINERNET_AVAILABLE = False\n')
+            f.write('    # Use standard mininet components as fallback\n')
+            f.write('    from mininet.cli import CLI\n')
+            f.write('    from mininet.node import Host as DockerSta\n')
+            f.write('    makeTerm2 = None\n')
         else:
             f.write('from mininet.cli import CLI\n')
         
@@ -217,6 +228,7 @@ class MininetExporter:
         f.write('    if clean_name and clean_name[0].isdigit():\n')
         f.write('        clean_name = \'_\' + clean_name\n')
         f.write('    return clean_name or \'node\'\n\n')
+        
         
         # Add Docker network utility functions if needed
         if hasattr(self.main_window, 'docker_network_manager'):
@@ -616,15 +628,19 @@ class MininetExporter:
                 
                 # Build gNB parameters following the enhanced pattern
                 gnb_params = [f"'{gnb_name}'"]
-                gnb_params.append('cap_add=["net_admin"]')
-                gnb_params.append('network_mode=NETWORK_MODE')  # This will be replaced with actual variable reference
-                gnb_params.append('publish_all_ports=True')
-                gnb_params.append('dcmd="/bin/bash"')
-                gnb_params.append("cls=DockerSta")
-                gnb_params.append("dimage='adaptive/ueransim:latest'")  # Use our enhanced image
                 
-                # Add privileged mode for AP functionality
-                gnb_params.append('privileged=True')
+                # Add Docker-specific parameters conditionally
+                f.write(f'    # Build gNB parameters\n')
+                f.write(f'    gnb_params = [\'{gnb_name}\']\n')
+                f.write(f'    if CONTAINERNET_AVAILABLE:\n')
+                f.write(f'        gnb_params.extend([\n')
+                f.write(f'            \'cap_add=["net_admin"]\',\n')
+                f.write(f'            \'network_mode=\' + str(NETWORK_MODE),\n')
+                f.write(f'            \'publish_all_ports=True\',\n')
+                f.write(f'            \'dcmd="/bin/bash"\',\n')
+                f.write(f'            \'cls=DockerSta\',\n')
+                f.write(f'            \'dimage="adaptive/ueransim:latest"\',\n')
+                f.write(f'            \'privileged=True\',\n')
                 
                 # Add volumes for host hardware access (needed for AP functionality)
                 volumes = [
@@ -632,11 +648,11 @@ class MininetExporter:
                     '"/lib/modules:/lib/modules"',
                     '"/sys/kernel/debug:/sys/kernel/debug"'
                 ]
-                gnb_params.append(f'volumes=[{", ".join(volumes)}]')
+                f.write(f'            \'volumes=[{", ".join(volumes)}]\',\n')
                 
                 # Add position
                 position = f"{gnb.get('x', 0):.1f},{gnb.get('y', 0):.1f},0"
-                gnb_params.append(f"position='{position}'")
+                f.write(f'            \'position="{position}"\',\n')
                 
                 # Get enhanced configuration from ConfigurationMapper
                 from manager.configmap import ConfigurationMapper
@@ -644,11 +660,11 @@ class MininetExporter:
                 
                 # Add range (default 300 if not specified)
                 range_val = gnb_config.get('range', 300)
-                gnb_params.append(f"range={range_val}")
+                f.write(f'            \'range={range_val}\',\n')
                 
                 # Add txpower if specified (default 30)
                 txpower = gnb_config.get('txpower', 30)
-                gnb_params.append(f"txpower={txpower}")
+                f.write(f'            \'txpower={txpower}\',\n')
                 
                 # Build environment variables for both 5G and AP functionality
                 env_dict = {}
@@ -672,13 +688,16 @@ class MininetExporter:
                 
                 # Format environment like in the original
                 env_str = str(env_dict).replace("'", '"')
-                gnb_params.append(f"environment={env_str}")
+                f.write(f'            \'environment={env_str}\'\n')
+                f.write(f'        ])\n')
+                f.write(f'    else:\n')
+                f.write(f'        # Standard Mininet parameters\n')
+                f.write(f'        gnb_params.extend([\n')
+                f.write(f'            \'cls=Host\',\n')
+                f.write(f'            \'position="{position}"\'\n')
+                f.write(f'        ])\n')
                 
-                # Join parameters and replace network_mode placeholder with actual variable reference
-                params_str = ", ".join(gnb_params)
-                params_str = params_str.replace("'network_mode=NETWORK_MODE'", "network_mode=NETWORK_MODE")
-                
-                f.write(f'    {gnb_name} = net.addStation({params_str})\n')
+                f.write(f'    {gnb_name} = net.addStation(*gnb_params)\n')
             f.write('\n')
         
         # Write UEs following the exact pattern from fixed_topology-upf.py
@@ -689,9 +708,12 @@ class MininetExporter:
                 ue_name = self.sanitize_variable_name(ue['name'])
                 
                 # Build UE parameters following the exact pattern
-                ue_params = [f"'{ue_name}'"]
-                ue_params.append('devices=["/dev/net/tun"]')
-                ue_params.append('cap_add=["net_admin"]')
+                f.write(f'    # Build UE parameters\n')
+                f.write(f'    ue_params = [\'{ue_name}\']\n')
+                f.write(f'    if CONTAINERNET_AVAILABLE:\n')
+                f.write(f'        ue_params.extend([\n')
+                f.write(f'            \'devices=["/dev/net/tun"]\',\n')
+                f.write(f'            \'cap_add=["net_admin"]\',\n')
                 
                 # Add enhanced power and range configuration from ConfigurationMapper
                 from manager.configmap import ConfigurationMapper
@@ -699,24 +721,24 @@ class MininetExporter:
                 
                 # Add range (default 116 if not specified)
                 range_val = ue_config.get('range', 116)
-                ue_params.append(f'range={range_val}')
+                f.write(f'            \'range={range_val}\',\n')
                 
                 # Add txpower if specified
                 if 'txpower' in ue_config:
-                    ue_params.append(f"txpower={ue_config['txpower']}")
+                    f.write(f'            \'txpower={ue_config["txpower"]}\',\n')
                 
                 # Add association mode if specified
                 if 'association' in ue_config and ue_config['association'] != 'auto':
-                    ue_params.append(f"associationMode='{ue_config['association']}'")
+                    f.write(f'            \'associationMode="{ue_config["association"]}"\',\n')
                 
-                ue_params.append('network_mode=NETWORK_MODE')
-                ue_params.append('dcmd="/bin/bash"')
-                ue_params.append("cls=DockerSta")
-                ue_params.append("dimage='gradiant/ueransim:3.2.6'")
+                f.write(f'            \'network_mode=\' + str(NETWORK_MODE),\n')
+                f.write(f'            \'dcmd="/bin/bash"\',\n')
+                f.write(f'            \'cls=DockerSta\',\n')
+                f.write(f'            \'dimage="gradiant/ueransim:3.2.6"\',\n')
                 
                 # Add position
                 position = f"{ue.get('x', 0):.1f},{ue.get('y', 0):.1f},0"
-                ue_params.append(f"position='{position}'")
+                f.write(f'            \'position="{position}"\',\n')
                 
                 # Enhanced UE environment variables with all new configuration options
                 gnb_hostname = ue_config.get('gnb_hostname', 'mn.gnb')
@@ -758,13 +780,16 @@ class MininetExporter:
                 
                 # Format environment like in the original
                 env_str = str(env_dict).replace("'", '"')
-                ue_params.append(f"environment={env_str}")
+                f.write(f'            \'environment={env_str}\'\n')
+                f.write(f'        ])\n')
+                f.write(f'    else:\n')
+                f.write(f'        # Standard Mininet parameters\n')
+                f.write(f'        ue_params.extend([\n')
+                f.write(f'            \'cls=Host\',\n')
+                f.write(f'            \'position="{position}"\'\n')
+                f.write(f'        ])\n')
                 
-                # Join parameters and replace network_mode placeholder with actual variable reference
-                params_str = ", ".join(ue_params)
-                params_str = params_str.replace("'network_mode=NETWORK_MODE'", "network_mode=NETWORK_MODE")
-                
-                f.write(f'    {ue_name} = net.addStation({params_str})\n')
+                f.write(f'    {ue_name} = net.addStation(*ue_params)\n')
             f.write('\n')
         
         if categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']:
@@ -977,32 +1002,35 @@ class MininetExporter:
                     comp_name = self.sanitize_variable_name(component.get('name', f'{comp_type.lower()}{i}'))
                     
                     # Build component parameters following fixed_topology-upf.py pattern
-                    comp_params = [f"'{comp_name}'"]
+                    f.write(f'    # Build {comp_type} parameters\n')
+                    f.write(f'    comp_params = [\'{comp_name}\']\n')
+                    f.write(f'    if CONTAINERNET_AVAILABLE:\n')
+                    f.write(f'        comp_params.extend([\n')
                     
                     # Add required Docker parameters
                     if config['requires_tun']:
-                        comp_params.append('devices=["/dev/net/tun"]')
-                    comp_params.append('cap_add=["net_admin"]')
-                    comp_params.append('network_mode=NETWORK_MODE')
+                        f.write(f'            \'devices=["/dev/net/tun"]\',\n')
+                    f.write(f'            \'cap_add=["net_admin"]\',\n')
+                    f.write(f'            \'network_mode=\' + str(NETWORK_MODE),\n')
                     
                     if config['privileged']:
-                        comp_params.append('privileged=True')
+                        f.write(f'            \'privileged=True\',\n')
                     
-                    comp_params.append('publish_all_ports=True')
-                    comp_params.append('dcmd="/bin/bash"')
-                    comp_params.append("cls=DockerSta")
-                    comp_params.append(f"dimage='{config['image']}'")
+                    f.write(f'            \'publish_all_ports=True\',\n')
+                    f.write(f'            \'dcmd="/bin/bash"\',\n')
+                    f.write(f'            \'cls=DockerSta\',\n')
+                    f.write(f'            \'dimage="{config["image"]}"\',\n')
                     
                     # Add position
                     x_pos = component.get('x', 0)
                     y_pos = component.get('y', 0)
                     position = f"{x_pos:.1f},{y_pos:.1f},0"
-                    comp_params.append(f"position='{position}'")
-                    comp_params.append("range=116")
+                    f.write(f'            \'position="{position}"\',\n')
+                    f.write(f'            \'range=116\',\n')
                     
                     # Add volume mount for configuration
                     config_file = component.get('config_file', config['default_config'])
-                    comp_params.append(f'volumes=[cwd + "/config/{config_file}:/opt/open5gs/etc/open5gs/{comp_type.lower()}.yaml"]')
+                    f.write(f'            \'volumes=[cwd + "/config/{config_file}:/opt/open5gs/etc/open5gs/{comp_type.lower()}.yaml"]\',\n')
                     
                     # Add environment variables for configuration
                     if 'env_vars' in config and config['env_vars']:
@@ -1010,13 +1038,17 @@ class MininetExporter:
                         for env_key, env_value in config['env_vars'].items():
                             env_list.append(f'"{env_key}={env_value}"')
                         if env_list:
-                            comp_params.append(f'environment=[{", ".join(env_list)}]')
+                            f.write(f'            \'environment=[{", ".join(env_list)}]\'\n')
                     
-                    # Join parameters and replace network_mode placeholder with actual variable reference
-                    params_str = ", ".join(comp_params)
-                    params_str = params_str.replace("'network_mode=NETWORK_MODE'", "network_mode=NETWORK_MODE")
+                    f.write(f'        ])\n')
+                    f.write(f'    else:\n')
+                    f.write(f'        # Standard Mininet parameters\n')
+                    f.write(f'        comp_params.extend([\n')
+                    f.write(f'            \'cls=Host\',\n')
+                    f.write(f'            \'position="{position}"\'\n')
+                    f.write(f'        ])\n')
                     
-                    f.write(f'    {comp_name} = net.addStation({params_str})\n')
+                    f.write(f'    {comp_name} = net.addStation(*comp_params)\n')
         
         f.write('\n')
 
