@@ -353,7 +353,12 @@ class MininetExporter:
         
         # Configure nodes
         f.write('    info("*** Configuring nodes\\n")\n')
-        f.write('    net.configureNodes()\n\n')
+        f.write('    # configureNodes() is only available in mininet-wifi\n')
+        f.write('    if hasattr(net, "configureNodes"):\n')
+        f.write('        net.configureNodes()\n')
+        f.write('    else:\n')
+        f.write('        # Standard Mininet doesn\'t need explicit node configuration\n')
+        f.write('        pass\n\n')
         
         # Set propagation model if wireless components exist
         self.write_propagation_model(f, categorized_nodes)
