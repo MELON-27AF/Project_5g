@@ -194,6 +194,7 @@ class MininetExporter:
             f.write('    from mininet.log import setLogLevel, info\n')
             f.write('    from mininet.cli import CLI\n')
             f.write('    from mininet.link import TCLink, Link, Intf\n')
+            f.write('    from containernet.term import makeTerm as makeTerm2\n')
             f.write('    CONTAINERNET_AVAILABLE = True\n')
             f.write('    print("✓ containernet available - using Docker support")\n')
             f.write('except ImportError as e:\n')
@@ -266,6 +267,12 @@ class MininetExporter:
             f.write('                               "volumes", "environment"]:\n')
             f.write('                    filtered_kwargs[key] = value\n')
             f.write('            return self.addHost(name, cls=Host, **filtered_kwargs)\n')
+            f.write('    \n')
+            f.write('    def makeTerm2(node, cmd="bash"):\n')
+            f.write('        """Fallback makeTerm2 function"""\n')
+            f.write('        print(f"*** Starting process on {node.name}: {cmd}")\n')
+            f.write('        # Use sendCmd for background processes\n')
+            f.write('        node.sendCmd(cmd)\n')
             f.write('\n')
 
     def write_utility_functions(self, f):
@@ -600,6 +607,10 @@ logger:
         # Create links
         f.write('    info("*** Creating links\\n")\n')
         self.write_links(f, links, categorized_nodes)
+        
+        # Ensure all containers have at least one interface for Docker network connectivity
+        f.write('    info("*** Ensuring container connectivity\\n")\n')
+        self.write_container_connectivity(f, categorized_nodes)
         
         # Add default links for 5G components if no explicit links are defined
         has_5g_components = bool(categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g'])
@@ -1760,9 +1771,17 @@ logger:
         if not links:
             return
             
+        # Get controller names to filter them out from data links
+        controller_names = [self.sanitize_variable_name(ctrl['name']) for ctrl in categorized_nodes.get('controllers', [])]
+        
         for link in links:
             source_name = self.sanitize_variable_name(link['source'])
             dest_name = self.sanitize_variable_name(link['destination'])
+            
+            # Skip links involving controllers (controllers don't have data plane connections)
+            if source_name in controller_names or dest_name in controller_names:
+                f.write(f'    # Skipping controller link: {source_name} <-> {dest_name} (controllers use control plane)\n')
+                continue
             
             # Replace VGcore #1 connections with amf1 connections
             # Handle various possible names for VGcore #1
@@ -1839,13 +1858,18 @@ logger:
         f.write('    topology(sys.argv)\n')
 
     def sanitize_variable_name(self, name):
-        """Convert display name to valid Python variable name."""
+        """Convert display name to valid Python variable name and network interface name."""
         import re
-        # Remove special characters and spaces
-        clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
+        # Remove special characters and spaces, keep only alphanumeric and underscores
+        clean_name = re.sub(r'[^a-zA-Z0-9_]', '', str(name))
         # Ensure it starts with a letter or underscore
         if clean_name and clean_name[0].isdigit():
-            clean_name = '_' + clean_name
+            clean_name = 'n' + clean_name
+        # Limit length to avoid interface name issues (max 15 chars for interface names)
+        # Leave room for -eth0 suffix (5 chars), so max 10 chars for node name
+        if len(clean_name) > 10:
+            clean_name = clean_name[:10]
+        # Ensure it's not empty
         return clean_name or 'node'
     
     def _check_save_status(self):
@@ -2205,3 +2229,57 @@ ranUeUsageIndication: false
 disablePeriodicRegistration: false
 """
         return template_content
+
+    def write_container_connectivity(self, f, categorized_nodes):
+        """Ensure all Docker containers have proper network connectivity."""
+        # Collect all Docker-based containers that need connectivity
+        docker_containers = []
+        
+        # Add 5G core components
+        core_components = categorized_nodes.get('core5g_components', {})
+        for comp_type, components in core_components.items():
+            for component in components:
+                comp_name = self.sanitize_variable_name(component.get('name', f'{comp_type.lower()}1'))
+                docker_containers.append(comp_name)
+        
+        # Add gNBs
+        for gnb in categorized_nodes['gnbs']:
+            gnb_name = self.sanitize_variable_name(gnb['name'])
+            docker_containers.append(gnb_name)
+        
+        # Add UEs
+        for ue in categorized_nodes['ues']:
+            ue_name = self.sanitize_variable_name(ue['name'])
+            docker_containers.append(ue_name)
+        
+        # Add Docker hosts
+        for docker_host in categorized_nodes['docker_hosts']:
+            host_name = self.sanitize_variable_name(docker_host['name'])
+            docker_containers.append(host_name)
+        
+        if not docker_containers:
+            return
+        
+        f.write('    # Ensure all Docker containers have network interfaces\n')
+        f.write('    containers_without_interfaces = []\n')
+        f.write('    \n')
+        
+        # Check each container for interfaces
+        for container_name in docker_containers:
+            f.write(f'    if hasattr({container_name}, "intfNames") and not list({container_name}.intfNames()):\n')
+            f.write(f'        containers_without_interfaces.append("{container_name}")\n')
+        
+        f.write('    \n')
+        f.write('    # Create a management switch if containers need connectivity\n')
+        f.write('    if containers_without_interfaces:\n')
+        f.write('        print(f"*** Creating management connectivity for containers: {containers_without_interfaces}")\n')
+        f.write('        mgmt_switch = net.addSwitch("mgmt", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
+        f.write('        \n')
+        f.write('        for container_name in containers_without_interfaces:\n')
+        f.write('            try:\n')
+        f.write('                container = locals()[container_name]\n')
+        f.write('                net.addLink(mgmt_switch, container)\n')
+        f.write('                print(f"*** Connected {container_name} to management switch")\n')
+        f.write('            except Exception as e:\n')
+        f.write('                print(f"*** Warning: Failed to connect {container_name}: {e}")\n')
+        f.write('    \n')
