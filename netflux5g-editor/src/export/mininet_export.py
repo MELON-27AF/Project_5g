@@ -177,11 +177,23 @@ class MininetExporter:
         f.write('from mininet.log import setLogLevel, info\n')
         
         if has_wireless:
-            # Import mininet-wifi components
-            f.write('from mn_wifi.net import Mininet_wifi\n')
-            f.write('from mn_wifi.node import Station, OVSKernelAP\n')
-            f.write('from mn_wifi.link import wmediumd, Intf\n')
-            f.write('from mn_wifi.wmediumdConnector import interference\n')
+            # Import mininet-wifi components with compatibility handling
+            f.write('# Import mininet-wifi with compatibility handling\n')
+            f.write('try:\n')
+            f.write('    from mn_wifi.net import Mininet_wifi\n')
+            f.write('    from mn_wifi.node import Station, OVSKernelAP\n')
+            f.write('    from mn_wifi.link import wmediumd, Intf\n')
+            f.write('    from mn_wifi.wmediumdConnector import interference\n')
+            f.write('    WIFI_AVAILABLE = True\n')
+            f.write('except ImportError as e:\n')
+            f.write('    print(f"Warning: mininet-wifi import failed: {e}")\n')
+            f.write('    print("Falling back to standard Mininet for wireless components")\n')
+            f.write('    WIFI_AVAILABLE = False\n')
+            f.write('    # Use standard mininet components as fallback\n')
+            f.write('    from mininet.node import Host as Station\n')
+            f.write('    from mininet.node import OVSSwitch as OVSKernelAP\n')
+            f.write('    wmediumd = None\n')
+            f.write('    interference = None\n')
         
         if has_docker:
             # Import containernet components for Docker/5G support
@@ -340,10 +352,15 @@ class MininetExporter:
         
         # Always use Mininet_wifi for 5G/wireless components like in the original
         if has_wireless or has_docker:
-            f.write('    net = Mininet_wifi(topo=None,\n')
-            f.write('                       build=False,\n')
-            f.write('                       link=wmediumd, wmediumd_mode=interference,\n')
-            f.write('                       ipBase=\'10.0.0.0/8\')\n')
+            f.write('    # Use mininet-wifi if available, otherwise fallback to standard Mininet\n')
+            f.write('    if WIFI_AVAILABLE:\n')
+            f.write('        net = Mininet_wifi(topo=None,\n')
+            f.write('                           build=False,\n')
+            f.write('                           link=wmediumd, wmediumd_mode=interference,\n')
+            f.write('                           ipBase=\'10.0.0.0/8\')\n')
+            f.write('    else:\n')
+            f.write('        print("Using standard Mininet (mininet-wifi not available)")\n')
+            f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
         else:
             f.write('    net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
         f.write('\n')
@@ -1224,7 +1241,11 @@ class MininetExporter:
         
         if has_wireless:
             f.write('    info("*** Configuring propagation model\\n")\n')
-            f.write('    net.setPropagationModel(model="logDistance", exp=4.5)\n\n')
+            f.write('    if WIFI_AVAILABLE:\n')
+            f.write('        net.setPropagationModel(model="logDistance", exp=4.5)\n')
+            f.write('    else:\n')
+            f.write('        print("Propagation model not available in standard Mininet")\n')
+            f.write('\n')
 
     def write_links(self, f, links, categorized_nodes):
         """Write link creation code based on extracted links."""
@@ -1263,8 +1284,11 @@ class MininetExporter:
                        categorized_nodes['ues'] or categorized_nodes['gnbs'])
         
         if has_wireless:
-            f.write('    if "-p" not in args:\n')
-            f.write('        net.plotGraph(max_x=200, max_y=200)\n\n')
+            f.write('    if WIFI_AVAILABLE and "-p" not in args:\n')
+            f.write('        net.plotGraph(max_x=200, max_y=200)\n')
+            f.write('    elif not WIFI_AVAILABLE:\n')
+            f.write('        print("Plot graph not available in standard Mininet")\n')
+            f.write('\n')
 
     def write_controller_startup(self, f, categorized_nodes):
         """Write controller startup code."""
