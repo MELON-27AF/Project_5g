@@ -1302,7 +1302,6 @@ logger:
         
         # Create logging directory if it doesn't exist
         f.write('    # Create logging directory for container logs\n')
-        f.write('    import os\n')
         f.write('    os.makedirs(os.path.join(cwd, "logging"), exist_ok=True)\n\n')
         
         # Generate code for each 5G core component type
