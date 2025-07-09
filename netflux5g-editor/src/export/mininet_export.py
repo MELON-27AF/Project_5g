@@ -698,8 +698,11 @@ logger:
         # Configure nodes
         f.write('    info("*** Configuring nodes\\n")\n')
         f.write('    # configureNodes() is only available in mininet-wifi\n')
-        f.write('    if hasattr(net, "configureNodes"):\n')
+        f.write('    # In hybrid mode (Containernet + wireless), skip configureNodes to avoid wmediumd\n')
+        f.write('    if hasattr(net, "configureNodes") and not has_docker_components:\n')
         f.write('        net.configureNodes()\n')
+        f.write('    elif hasattr(net, "configureNodes") and has_docker_components:\n')
+        f.write('        print("Skipping configureNodes() in hybrid mode to avoid wmediumd socket issues")\n')
         f.write('    else:\n')
         f.write('        # Standard Mininet doesn\'t need explicit node configuration\n')
         f.write('        pass\n\n')
@@ -1922,7 +1925,7 @@ logger:
         """Write plot graph configuration for wireless networks."""
         has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
                        categorized_nodes['ues'] or categorized_nodes['gnbs'])
-        has_docker = (categorized_nodes['dockers'] or categorized_nodes['gnbs'] or 
+        has_docker = (categorized_nodes['docker_hosts'] or categorized_nodes['gnbs'] or 
                      categorized_nodes['ues'] or categorized_nodes['core5g'])
         
         if has_wireless:
