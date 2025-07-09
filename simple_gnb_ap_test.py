@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """
-Simple test untuk gNB sebagai Access Point
+Simple test unt    # UPF (User Plane Function)
+    upf1 = net.addHost('upf1',
+                       cls=DockerSta, 
+                       dimage="adaptive/open5gs:1.0",
+                       network_mode="open5gs-ueransim_default",
+                       cap_add=["NET_ADMIN"],
+                       privileged=True,
+                       publish_all_ports=True,
+                       environment={
+                           "COMPONENT_NAME": "upf"
+                       })gai Access Point
 Mendemonstrasikan bagaimana UE mendapatkan interface uesimtun melalui koneksi wireless ke gNB AP
 """
 
@@ -11,7 +21,7 @@ from mininet.link import TCLink
 from mininet.node import RemoteController, OVSKernelSwitch, Host
 from mininet.log import setLogLevel, info
 from mininet.cli import CLI
-from containernet.node import DockerHost
+from containernet.node import DockerSta
 from subprocess import call
 import time
 
@@ -33,7 +43,7 @@ def simple_gnb_ap_topology():
     info('\n*** Add 5G Core Network Components\n')
     # AMF (Access and Mobility Management Function)
     amf1 = net.addHost('amf1', 
-                       cls=DockerHost,
+                       cls=DockerSta,
                        dimage="adaptive/open5gs:1.0",
                        network_mode="open5gs-ueransim_default",
                        cap_add=["NET_ADMIN"],
@@ -44,7 +54,7 @@ def simple_gnb_ap_topology():
 
     # UPF (User Plane Function)
     upf1 = net.addHost('upf1',
-                       cls=DockerHost, 
+                       cls=DockerSta, 
                        dimage="adaptive/open5gs:1.0",
                        network_mode="open5gs-ueransim_default",
                        cap_add=["NET_ADMIN"],
@@ -57,7 +67,7 @@ def simple_gnb_ap_topology():
     info('\n*** Add gNB with AP functionality\n')
     # gNB yang berfungsi sebagai Access Point
     gnb1 = net.addHost('gnb1',
-                       cls=DockerHost,
+                       cls=DockerSta,
                        dimage="adaptive/ueransim:latest",
                        network_mode="open5gs-ueransim_default",
                        cap_add=["NET_ADMIN"],
@@ -89,7 +99,7 @@ def simple_gnb_ap_topology():
     info('\n*** Add UE (User Equipment)\n')
     # UE yang akan connect ke gNB AP dan mendapat uesimtun interface
     ue1 = net.addHost('ue1',
-                      cls=DockerHost,
+                      cls=DockerSta,
                       dimage="adaptive/ueransim:latest",
                       network_mode="open5gs-ueransim_default",
                       devices=["/dev/net/tun"],
