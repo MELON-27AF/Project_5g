@@ -720,12 +720,27 @@ logger:
         
         # Add network components
         f.write('    info("*** Creating nodes\\n")\n')
+        
+        # Track if any nodes were actually created
+        f.write('    nodes_created = 0\n')
+        
         self.write_access_points(f, categorized_nodes)
         self.write_stations(f, categorized_nodes)
         self.write_hosts(f, categorized_nodes)
         self.write_switches(f, categorized_nodes)
         self.write_5g_components(f, categorized_nodes)
         self.write_docker_hosts(f, categorized_nodes)
+        
+        # Add a basic host if no components were created (empty topology)
+        f.write('    \n')
+        f.write('    # Add default host if topology is empty\n')
+        f.write('    if len(net.hosts) == 0 and len(net.switches) == 0:\n')
+        f.write('        print("*** Empty topology detected - adding default host and switch for testing")\n')
+        f.write('        h1 = net.addHost("h1", ip="10.0.0.1")\n')
+        f.write('        s1 = net.addSwitch("s1", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
+        f.write('        net.addLink(h1, s1)\n')
+        f.write('        print("*** Added h1 (10.0.0.1) and s1 for basic connectivity testing")\n')
+        f.write('    \n')
         
         # Configure nodes
         f.write('    info("*** Configuring nodes\\n")\n')
@@ -816,6 +831,12 @@ logger:
         f.write('    debug_network_mode()\n')
         f.write('    debug_node_interfaces()\n')
         f.write('    \n')
+        f.write('    # Show initial network state\n')
+        f.write('    print("\\n=== Initial Network State ===")\n')
+        f.write('    print(f"Network built successfully with {len(net.hosts)} hosts, {len(net.switches)} switches")\n')
+        f.write('    print(f"Controllers: {len(net.controllers)}")\n')
+        f.write('    print(f"Links: {len(net.links)}")\n')
+        f.write('    \n')
         
         # Setup hybrid wireless connectivity after network build
         self.write_hybrid_wireless_docker(f, categorized_nodes)
@@ -830,7 +851,30 @@ logger:
         self.write_5g_startup(f, categorized_nodes)
         
         # CLI and cleanup
-        f.write('    info("*** Running CLI\\n")\n')
+        f.write('    info("*** Network topology ready\\n")\n')
+        f.write('    \n')
+        f.write('    # Show network summary\n')
+        f.write('    print("\\n=== Network Summary ===")\n')
+        f.write('    print(f"Total nodes: {len(net.hosts + net.switches)}")\n')
+        f.write('    print(f"Hosts: {[h.name for h in net.hosts]}")\n')
+        f.write('    print(f"Switches: {[s.name for s in net.switches]}")\n')
+        f.write('    print(f"Controllers: {[c.name for c in net.controllers]}")\n')
+        f.write('    print(f"Links: {len(net.links)}")\n')
+        f.write('    \n')
+        f.write('    # Test connectivity if there are hosts\n')
+        f.write('    if len(net.hosts) >= 2:\n')
+        f.write('        print("\\n=== Testing connectivity ===")\n')
+        f.write('        net.pingAll()\n')
+        f.write('    elif len(net.hosts) == 1:\n')
+        f.write('        print(f"\\n=== Single host network: {net.hosts[0].name} ===")\n')
+        f.write('        host = net.hosts[0]\n')
+        f.write('        print(f"Host IP: {host.IP()}")\n')
+        f.write('        print(f"Host interfaces: {list(host.intfNames())}")\n')
+        f.write('    else:\n')
+        f.write('        print("\\n=== Empty network - no hosts created ===")\n')
+        f.write('        print("Add components to your topology and re-export to see network activity")\n')
+        f.write('    \n')
+        f.write('    info("*** Running CLI (type \'help\' for commands, \'exit\' to quit)\\n")\n')
         f.write('    CLI(net)\n\n')
         f.write('    info("*** Stopping network\\n")\n')
         f.write('    net.stop()\n\n')
