@@ -61,6 +61,24 @@ class AutomationRunner(QObject):
 
         # Check if we have components to export
         nodes, links = self.main_window.extractTopology()
+        
+        # DEBUG: Print what was extracted
+        debug_print(f"DEBUG: Extracted topology - {len(nodes)} nodes, {len(links)} links")
+        debug_print("DEBUG: Node types and names:")
+        for node in nodes:
+            name = node.get('name', 'Unnamed')
+            node_type = node.get('type', 'Unknown')
+            debug_print(f"  - {name} ({node_type})")
+        
+        # Check what file is currently loaded
+        if hasattr(self.main_window, 'current_file') and self.main_window.current_file:
+            debug_print(f"DEBUG: Current file: {self.main_window.current_file}")
+        elif hasattr(self.main_window, 'is_template_loaded') and self.main_window.is_template_loaded:
+            template_name = getattr(self.main_window, 'template_name', 'Unknown')
+            debug_print(f"DEBUG: Template loaded: {template_name}")
+        else:
+            debug_print("DEBUG: No file loaded or new topology")
+        
         core5g_components = [n for n in nodes if n['type'] == 'VGcore']
         
         if not core5g_components and not any(n['type'] in ['GNB', 'UE', 'Host', 'STA'] for n in nodes):
