@@ -1830,14 +1830,7 @@ logger:
                 f.write(f'            print("  ✓ Internet connectivity: OK")\n')
                 f.write(f'        else:\n')
                 f.write(f'            print("  ✗ Internet connectivity: FAILED")\n')
-            f.write('    \n')
-            f.write('    # Add CLI commands for easy debugging\n')
-            f.write('    print("\\n=== Available Debug Commands ===")\n')
-            f.write('    print("check_ue_interfaces() - Check status of all UE interfaces")\n')
-            f.write('    print("test_ue_connectivity() - Test connectivity through UE interfaces")\n')
-            f.write('    print("Example: In CLI, type: py check_ue_interfaces()")\n')
-            f.write('    print("Example: In CLI, type: py test_ue_connectivity()")\n')
-            f.write('    print("Example: Check specific UE: UE_1.cmd(\'ip addr show uesimtun0\')")\n\n')
+            f.write('\n')
         
         # Add CLI startup
         f.write('    info("*** Running CLI\\n")\n')
@@ -2231,6 +2224,13 @@ logger:
             gnb_ip = 'GNB_CONTAINER_IP_PLACEHOLDER'
         
         template_content = f"""# IMSI number of the UE. IMSI = [MCC|MNC|MSISDN] (In total 15 or 16 digits)
+supi: 'imsi-{ue_config.get('mcc', '999')}{ue_config.get('mnc', '70')}{ue_config.get('msisdn', f'000000000{ue_index:01d}')}'
+# Mobile Country Code value
+mcc: '{ue_config.get('mcc', '999')}'
+# Mobile Network Code value (2 or 3 digits)
+mnc: '{ue_config.get('mnc', '70')}'
+
+# Permanent subscription key
 supi: 'imsi-{ue_config.get('mcc', '999')}{ue_config.get('mnc', '70')}{ue_config.get('msisdn', f'000000000{ue_index:01d}')}'
 # Mobile Country Code value
 mcc: '{ue_config.get('mcc', '999')}'
