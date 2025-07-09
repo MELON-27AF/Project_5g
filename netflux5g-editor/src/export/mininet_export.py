@@ -2014,9 +2014,10 @@ logger:
             f.write('        if CONTAINERNET_AVAILABLE and has_docker_components:\n')
             f.write('            print("Plot graph disabled in hybrid mode (Containernet + wireless) to avoid wmediumd socket issues")\n')
             f.write('        else:\n')
+            f.write('            info("*** Plotting network\\n")\n')
             f.write('            net.plotGraph(max_x=200, max_y=200)\n')
             f.write('    elif not WIFI_AVAILABLE:\n')
-            f.write('        print("Plot graph not available in standard Mininet")\n')
+            f.write('        print("*** Plot graph not available in standard Mininet")\n')
             f.write('\n')
 
     def write_controller_startup(self, f, categorized_nodes):
