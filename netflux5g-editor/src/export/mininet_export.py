@@ -676,6 +676,18 @@ logger:
         # Initialize network
         self.write_network_initialization(f, categorized_nodes)
         
+        # Check for Docker components
+        f.write('    # Check for Docker components in this topology\n')
+        f.write('    has_docker_components = bool(\n')
+        f.write('        CONTAINERNET_AVAILABLE and (\n')
+        for comp_type in ['gnbs', 'ues', 'dockers']:
+            f.write(f'            {comp_type}_present or\n')
+        # Add 5G core components
+        f.write('            core5g_present\n')
+        f.write('        )\n')
+        f.write('    )\n')
+        f.write('\n')
+        
         # Add controllers
         self.write_controllers(f, categorized_nodes)
         
@@ -801,24 +813,20 @@ logger:
         if has_wireless:
             f.write('        if WIFI_AVAILABLE:\n')
             f.write('            # Containernet with wireless support (hybrid approach)\n')
-            f.write('            net = Mininet_wifi(topo=None,\n')
-            f.write('                               build=False,\n')
-            f.write('                               link=wmediumd, wmediumd_mode=interference,\n')
-            f.write('                               ipBase=\'10.0.0.0/8\')\n')
-            f.write('            print("Using Mininet-WiFi with Containernet Docker support")\n')
+            f.write('            # Use Containernet but without wmediumd to avoid socket issues\n')
+            f.write('            net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
+            f.write('            print("Using Containernet with wireless positioning (wmediumd disabled for stability)")\n')
             f.write('        else:\n')
             f.write('            net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
             f.write('            print("Using Containernet (wireless features limited)")\n')
         else:
             f.write('        net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
             f.write('        print("Using Containernet for Docker container support")\n')
-        f.write('    elif WIFI_AVAILABLE and has_wireless:\n')
+        f.write('    elif WIFI_AVAILABLE:\n')
         f.write('        # Use Mininet-WiFi for wireless (Docker will fallback to Host)\n')
-        f.write('        net = Mininet_wifi(topo=None,\n')
-        f.write('                           build=False,\n')
-        f.write('                           link=wmediumd, wmediumd_mode=interference,\n')
-        f.write('                           ipBase=\'10.0.0.0/8\')\n')
-        f.write('        print("Using Mininet-WiFi (Docker containers will use Host fallback)")\n')
+        f.write('        # Disable wmediumd to avoid socket connection issues\n')
+        f.write('        net = Mininet_wifi(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
+        f.write('        print("Using Mininet-WiFi without wmediumd (Docker containers will use Host fallback)")\n')
         f.write('    else:\n')
         f.write('        # Standard Mininet fallback\n')
         f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
@@ -1935,10 +1943,16 @@ logger:
         """Write plot graph configuration for wireless networks."""
         has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
                        categorized_nodes['ues'] or categorized_nodes['gnbs'])
+        has_docker = (categorized_nodes['dockers'] or categorized_nodes['gnbs'] or 
+                     categorized_nodes['ues'] or categorized_nodes['core5g'])
         
         if has_wireless:
             f.write('    if WIFI_AVAILABLE and "-p" not in args:\n')
-            f.write('        net.plotGraph(max_x=200, max_y=200)\n')
+            f.write('        # In hybrid mode (Containernet + wireless), disable plotGraph to avoid wmediumd issues\n')
+            f.write('        if CONTAINERNET_AVAILABLE and has_docker_components:\n')
+            f.write('            print("Plot graph disabled in hybrid mode (Containernet + wireless) to avoid wmediumd socket issues")\n')
+            f.write('        else:\n')
+            f.write('            net.plotGraph(max_x=200, max_y=200)\n')
             f.write('    elif not WIFI_AVAILABLE:\n')
             f.write('        print("Plot graph not available in standard Mininet")\n')
             f.write('\n')
