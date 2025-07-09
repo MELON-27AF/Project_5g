@@ -264,16 +264,6 @@ class MininetExporter:
             f.write('    from containernet.cli import CLI\n')
             f.write('    from mininet.link import TCLink, Link, Intf\n')
             f.write('    from containernet.term import makeTerm as makeTerm2\n')
-            f.write('    \n')
-            f.write('    # Try to import wireless features for hybrid mode\n')
-            f.write('    try:\n')
-            f.write('        from mn_wifi.node import Station, OVSKernelAP\n')
-            f.write('        HYBRID_WIRELESS_AVAILABLE = True\n')
-            f.write('        print("✓ Hybrid Docker+Wireless mode available")\n')
-            f.write('    except ImportError:\n')
-            f.write('        HYBRID_WIRELESS_AVAILABLE = False\n')
-            f.write('        print("⚠ Wireless features not available for hybrid mode")\n')
-            f.write('    \n')
             f.write('    CONTAINERNET_AVAILABLE = True\n')
             f.write('    print("✓ containernet available - using Docker support")\n')
             f.write('except ImportError as e:\n')
@@ -384,39 +374,17 @@ class MininetExporter:
         f.write('    if "dimage" in kwargs:\n')
         f.write('        # Docker container requested\n')
         f.write('        if CONTAINERNET_AVAILABLE:\n')
-        f.write('            # Check for hybrid wireless + Docker mode\n')
-        f.write('            if HYBRID_WIRELESS_AVAILABLE and "mode" in kwargs:\n')
-        f.write('                # Hybrid Docker+Wireless mode\n')
-        f.write('                mode_value = kwargs.get("mode", "unknown")\n')
-        f.write('                print(f"Creating hybrid Docker+Wireless container: {node_name} (mode: {mode_value})")\n')
-        f.write('                docker_kwargs = {"cls": DockerSta}\n')
-        f.write('                # Map all parameters including wireless ones\n')
-        f.write('                for key, value in kwargs.items():\n')
-        f.write('                    if key in ["dimage", "dcmd", "volumes", "environment", "cap_add", \n')
-        f.write('                               "devices", "privileged", "network_mode", "publish_all_ports",\n')
-        f.write('                               "position", "range", "txpower", "mode", "ssid", "channel", "ip", "mac"]:\n')
-        f.write('                        docker_kwargs[key] = value\n')
-        f.write('                \n')
-        f.write('                # Use appropriate method based on mode\n')
-        f.write('                if kwargs.get("mode") == "ap" and hasattr(net, "addAccessPoint"):\n')
-        f.write('                    return net.addAccessPoint(node_name, **docker_kwargs)\n')
-        f.write('                elif kwargs.get("mode") == "sta" and hasattr(net, "addStation"):\n')
-        f.write('                    return net.addStation(node_name, **docker_kwargs)\n')
-        f.write('                else:\n')
-        f.write('                    return net.addHost(node_name, **docker_kwargs)\n')
-        f.write('            else:\n')
-        f.write('                # Standard Docker container (no wireless)\n')
-        f.write('                print(f"Creating Docker container: {node_name}")\n')
-        f.write('                docker_kwargs = {"cls": DockerSta}\n')
-        f.write('                # Map parameters to DockerSta format\n')
-        f.write('                for key, value in kwargs.items():\n')
-        f.write('                    if key in ["dimage", "dcmd", "volumes", "environment", "cap_add", \n')
-        f.write('                               "devices", "privileged", "network_mode", "publish_all_ports"]:\n')
-        f.write('                        docker_kwargs[key] = value\n')
-        f.write('                    elif key in ["position", "range", "txpower"]:\n')
-        f.write('                        # Keep wireless parameters for positioning\n')
-        f.write('                        docker_kwargs[key] = value\n')
-        f.write('                return net.addHost(node_name, **docker_kwargs)\n')
+        f.write('            # Use Containernet addHost with DockerSta class\n')
+        f.write('            docker_kwargs = {"cls": DockerSta}\n')
+        f.write('            # Map parameters to DockerSta format\n')
+        f.write('            for key, value in kwargs.items():\n')
+        f.write('                if key in ["dimage", "dcmd", "volumes", "environment", "cap_add", \n')
+        f.write('                           "devices", "privileged", "network_mode", "publish_all_ports"]:\n')
+        f.write('                    docker_kwargs[key] = value\n')
+        f.write('                elif key in ["position", "range", "txpower"]:\n')
+        f.write('                    # Keep wireless parameters for positioning\n')
+        f.write('                    docker_kwargs[key] = value\n')
+        f.write('            return net.addHost(node_name, **docker_kwargs)\n')
         f.write('        else:\n')
         f.write('            # Fallback: use regular Host and log Docker parameters\n')
         f.write('            print(f"Warning: Docker container {node_name} falling back to Host (Containernet not available)")\n')
@@ -669,11 +637,11 @@ logger:
         if dynamic_network_name:
             f.write(f'    # Dynamic network mode based on topology file: {os.path.basename(self.main_window.current_file) if self.main_window.current_file else "Unknown"}\n')
             f.write(f'    NETWORK_MODE = "{dynamic_network_name}"\n')
-            f.write('    info(f"*** Using Docker network: {NETWORK_MODE}\\n")\n')
+            f.write(f'    info(f"*** Using Docker network: {{NETWORK_MODE}}\\n")\n')
         else:
             f.write(f'    # Default network mode when no file is loaded\n')
             f.write(f'    NETWORK_MODE = "open5gs-ueransim_default"\n')
-            f.write('    info(f"*** Using default Docker network: {NETWORK_MODE}\\n")\n')
+            f.write(f'    info(f"*** Using default Docker network: {{NETWORK_MODE}}\\n")\n')
         f.write('    \n')
         
         # Create necessary directories
@@ -720,27 +688,12 @@ logger:
         
         # Add network components
         f.write('    info("*** Creating nodes\\n")\n')
-        
-        # Track if any nodes were actually created
-        f.write('    nodes_created = 0\n')
-        
         self.write_access_points(f, categorized_nodes)
         self.write_stations(f, categorized_nodes)
         self.write_hosts(f, categorized_nodes)
         self.write_switches(f, categorized_nodes)
         self.write_5g_components(f, categorized_nodes)
         self.write_docker_hosts(f, categorized_nodes)
-        
-        # Add a basic host if no components were created (empty topology)
-        f.write('    \n')
-        f.write('    # Add default host if topology is empty\n')
-        f.write('    if len(net.hosts) == 0 and len(net.switches) == 0:\n')
-        f.write('        print("*** Empty topology detected - adding default host and switch for testing")\n')
-        f.write('        h1 = net.addHost("h1", ip="10.0.0.1")\n')
-        f.write('        s1 = net.addSwitch("s1", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
-        f.write('        net.addLink(h1, s1)\n')
-        f.write('        print("*** Added h1 (10.0.0.1) and s1 for basic connectivity testing")\n')
-        f.write('    \n')
         
         # Configure nodes
         f.write('    info("*** Configuring nodes\\n")\n')
@@ -831,19 +784,6 @@ logger:
         f.write('    debug_network_mode()\n')
         f.write('    debug_node_interfaces()\n')
         f.write('    \n')
-        f.write('    # Show initial network state\n')
-        f.write('    print("\\n=== Initial Network State ===")\n')
-        f.write('    print(f"Network built successfully with {len(net.hosts)} hosts, {len(net.switches)} switches")\n')
-        f.write('    print(f"Controllers: {len(net.controllers)}")\n')
-        f.write('    print(f"Links: {len(net.links)}")\n')
-        f.write('    \n')
-        
-        # Setup hybrid wireless connectivity after network build
-        self.write_hybrid_wireless_docker(f, categorized_nodes)
-        
-        # Setup uesimtun interfaces for UE containers
-        self.write_uesimtun_setup(f, categorized_nodes)
-        
         self.write_controller_startup(f, categorized_nodes)
         self.write_ap_startup(f, categorized_nodes)
         
@@ -851,30 +791,7 @@ logger:
         self.write_5g_startup(f, categorized_nodes)
         
         # CLI and cleanup
-        f.write('    info("*** Network topology ready\\n")\n')
-        f.write('    \n')
-        f.write('    # Show network summary\n')
-        f.write('    print("\\n=== Network Summary ===")\n')
-        f.write('    print(f"Total nodes: {len(net.hosts + net.switches)}")\n')
-        f.write('    print(f"Hosts: {[h.name for h in net.hosts]}")\n')
-        f.write('    print(f"Switches: {[s.name for s in net.switches]}")\n')
-        f.write('    print(f"Controllers: {[c.name for c in net.controllers]}")\n')
-        f.write('    print(f"Links: {len(net.links)}")\n')
-        f.write('    \n')
-        f.write('    # Test connectivity if there are hosts\n')
-        f.write('    if len(net.hosts) >= 2:\n')
-        f.write('        print("\\n=== Testing connectivity ===")\n')
-        f.write('        net.pingAll()\n')
-        f.write('    elif len(net.hosts) == 1:\n')
-        f.write('        print(f"\\n=== Single host network: {net.hosts[0].name} ===")\n')
-        f.write('        host = net.hosts[0]\n')
-        f.write('        print(f"Host IP: {host.IP()}")\n')
-        f.write('        print(f"Host interfaces: {list(host.intfNames())}")\n')
-        f.write('    else:\n')
-        f.write('        print("\\n=== Empty network - no hosts created ===")\n')
-        f.write('        print("Add components to your topology and re-export to see network activity")\n')
-        f.write('    \n')
-        f.write('    info("*** Running CLI (type \'help\' for commands, \'exit\' to quit)\\n")\n')
+        f.write('    info("*** Running CLI\\n")\n')
         f.write('    CLI(net)\n\n')
         f.write('    info("*** Stopping network\\n")\n')
         f.write('    net.stop()\n\n')
@@ -1252,16 +1169,6 @@ logger:
                 f.write(f'            }})\n')
                 
                 f.write(f'        {gnb_name} = add_node_to_network(net, \'{gnb_name}\', **gnb_kwargs)\n')
-                f.write(f'        \n')
-                f.write(f'        # Configure gNB for hybrid wireless + Docker mode\n')
-                f.write(f'        if WIFI_AVAILABLE and CONTAINERNET_AVAILABLE:\n')
-                f.write(f'            # Make gNB act as wireless AP\n')
-                f.write(f'            if hasattr({gnb_name}, "params"):\n')
-                f.write(f'                {gnb_name}.params["mode"] = "ap"\n')
-                f.write(f'                {gnb_name}.params["ssid"] = "{gnb_name}_5G"\n')
-                f.write(f'                {gnb_name}.params["channel"] = "1"\n')
-                f.write(f'                {gnb_name}.params["range"] = {range_val}\n')
-                f.write(f'                print(f"*** {gnb_name} configured as wireless AP with SSID {gnb_name}_5G")\n')
             f.write('\n')
         
         # Write UEs following the exact pattern from fixed_topology-upf.py
@@ -1384,14 +1291,6 @@ logger:
                 f.write(f'            }})\n')
                 
                 f.write(f'        {ue_name} = add_node_to_network(net, \'{ue_name}\', **ue_kwargs)\n')
-                f.write(f'        \n')
-                f.write(f'        # Configure UE for hybrid wireless + Docker mode\n')
-                f.write(f'        if WIFI_AVAILABLE and CONTAINERNET_AVAILABLE:\n')
-                f.write(f'            # Make UE act as wireless station\n')
-                f.write(f'            if hasattr({ue_name}, "params"):\n')
-                f.write(f'                {ue_name}.params["mode"] = "sta"\n')
-                f.write(f'                {ue_name}.params["range"] = 50\n')
-                f.write(f'                print(f"*** {ue_name} configured as wireless station")\n')
             f.write('\n')
         
         if categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']:
@@ -1729,9 +1628,9 @@ logger:
                     gnb_name = self.sanitize_variable_name(gnb['name'])
                     config_file = f"{gnb_name}.yaml"
                     # Replace placeholder with actual AMF IP
-                    f.write(f'    result = {gnb_name}.cmd("sed -i \\"s/AMF_CONTAINER_IP_PLACEHOLDER/${{amf_ip}}/g\\" /config/{config_file}")\n')
+                    f.write(f'    result = {gnb_name}.cmd(f"sed -i \\"s/AMF_CONTAINER_IP_PLACEHOLDER/${{amf_ip}}/g\\" /config/{config_file}")\n')
                     # Also replace any hardcoded AMF IPs
-                    f.write(f'    result = {gnb_name}.cmd("sed -i \\"s/172.18.0.10/${{amf_ip}}/g\\" /config/{config_file}")\n')
+                    f.write(f'    result = {gnb_name}.cmd(f"sed -i \\"s/172.18.0.10/${{amf_ip}}/g\\" /config/{config_file}")\n')
                     f.write(f'    print(f"Updated {gnb_name} config with AMF IP: {{amf_ip}}")\n')
                 f.write('\n')
             
@@ -1760,14 +1659,14 @@ logger:
                         ue_name = self.sanitize_variable_name(ue['name'])
                         config_file = f"{ue_name}.yaml"
                         # Replace placeholder with actual gNB IP using double quotes for variable expansion
-                        f.write(f'    result = {ue_name}.cmd("sed -i \\"s/GNB_CONTAINER_IP_PLACEHOLDER/${{gnb_ip}}/g\\" /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/GNB_CONTAINER_IP_PLACEHOLDER/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         # Also replace any remaining hardcoded IPs
-                        f.write(f'    result = {ue_name}.cmd("sed -i \\"s/10.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/10.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         f.write(f'    print(f"Updated {ue_name} config with gNB IP: {{gnb_ip}}")\n')
                         # Verify the change
                         f.write(f'    verify = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file}")\n')
                         f.write(f'    print(f"Verification for {ue_name}: {{verify}}")\n')
-                        f.write(f'    result = {ue_name}.cmd("sed -i \\"s/127.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/127.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         # Verify the change
                         f.write(f'    updated_ip = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file} | tail -1 | tr -d \' -\'")\n')
                         f.write(f'    print(f"Updated {ue_name} gNB IP to: {{updated_ip}}")\n')
@@ -1875,7 +1774,14 @@ logger:
                 f.write(f'            print("  ✓ Internet connectivity: OK")\n')
                 f.write(f'        else:\n')
                 f.write(f'            print("  ✗ Internet connectivity: FAILED")\n')
-            f.write('\n')
+            f.write('    \n')
+            f.write('    # Add CLI commands for easy debugging\n')
+            f.write('    print("\\n=== Available Debug Commands ===")\n')
+            f.write('    print("check_ue_interfaces() - Check status of all UE interfaces")\n')
+            f.write('    print("test_ue_connectivity() - Test connectivity through UE interfaces")\n')
+            f.write('    print("Example: In CLI, type: py check_ue_interfaces()")\n')
+            f.write('    print("Example: In CLI, type: py test_ue_connectivity()")\n')
+            f.write('    print("Example: Check specific UE: UE_1.cmd(\'ip addr show uesimtun0\')")\n\n')
         
         # Add CLI startup
         f.write('    info("*** Running CLI\\n")\n')
@@ -2269,13 +2175,6 @@ logger:
             gnb_ip = 'GNB_CONTAINER_IP_PLACEHOLDER'
         
         template_content = f"""# IMSI number of the UE. IMSI = [MCC|MNC|MSISDN] (In total 15 or 16 digits)
-supi: 'imsi-{ue_config.get('mcc', '999')}{ue_config.get('mnc', '70')}{ue_config.get('msisdn', f'000000000{ue_index:01d}')}'
-# Mobile Country Code value
-mcc: '{ue_config.get('mcc', '999')}'
-# Mobile Network Code value (2 or 3 digits)
-mnc: '{ue_config.get('mnc', '70')}'
-
-# Permanent subscription key
 supi: 'imsi-{ue_config.get('mcc', '999')}{ue_config.get('mnc', '70')}{ue_config.get('msisdn', f'000000000{ue_index:01d}')}'
 # Mobile Country Code value
 mcc: '{ue_config.get('mcc', '999')}'
