@@ -669,10 +669,7 @@ logger:
         f.write('        print(f"NETWORK_MODE: {NETWORK_MODE}")\n')
         f.write('    \n')
         
-        # Initialize network
-        self.write_network_initialization(f, categorized_nodes)
-        
-        # Check for Docker components
+        # Check for Docker components (must be before network initialization)
         f.write('    # Check for Docker components in this topology\n')
         f.write('    has_docker_components = bool(\n')
         f.write('        len([n for n in nodes if n.get("type") in ["UE", "GNB", "DockerHost", "VGcore"]]) > 0\n')
@@ -682,6 +679,9 @@ logger:
         f.write('    dockers_present = len([n for n in nodes if n.get("type") == "DockerHost"]) > 0\n')
         f.write('    core5g_present = len([n for n in nodes if n.get("type") == "VGcore"]) > 0\n')
         f.write('\n')
+        
+        # Initialize network
+        self.write_network_initialization(f, categorized_nodes)
         
         # Add controllers
         self.write_controllers(f, categorized_nodes)
