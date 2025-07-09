@@ -75,7 +75,7 @@ class AutomationRunner(QObject):
         print("DEBUG: Link details:")
         for i, link in enumerate(links):
             source = link.get('source', '?')
-            target = link.get('target', '?')
+            target = link.get('destination', '?')  # Fixed: should be 'destination' not 'target'
             print(f"  {i+1}. {source} -> {target}")
         
         # Check what file is currently loaded
@@ -185,8 +185,11 @@ class AutomationRunner(QObject):
     
     def _generate_mininet_script(self):
         """Generate Mininet script."""
+        print("DEBUG: Starting Mininet script generation...")
         script_name = "netflux5g_topology.py"
         self.mininet_script_path = os.path.join(self.export_dir, script_name)
+        
+        print(f"DEBUG: Calling mininet_exporter.export_to_mininet_script({self.mininet_script_path})")
         self.mininet_exporter.export_to_mininet_script(self.mininet_script_path)
         
         # Verify the script was created
@@ -195,6 +198,19 @@ class AutomationRunner(QObject):
             
         # Make the script executable
         os.chmod(self.mininet_script_path, 0o755)
+        print(f"DEBUG: Mininet script generated successfully at: {self.mininet_script_path}")
+        
+        # Show a preview of what was generated
+        try:
+            with open(self.mininet_script_path, 'r') as f:
+                lines = f.readlines()
+                print(f"DEBUG: Generated script has {len(lines)} lines")
+                print("DEBUG: First 20 lines of generated script:")
+                for i, line in enumerate(lines[:20]):
+                    print(f"  {i+1}: {line.rstrip()}")
+        except Exception as e:
+            print(f"DEBUG: Could not read generated script: {e}")
+        
         debug_print(f"Mininet script generated at: {self.mininet_script_path}")
     
     def _start_docker_services(self):

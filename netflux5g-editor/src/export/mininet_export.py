@@ -57,6 +57,13 @@ class MininetExporter:
         """Export the current topology to a working Mininet-WiFi Python script."""
         nodes, links = self.main_window.extractTopology()
         
+        print(f"DEBUG: MininetExporter - Got {len(nodes)} nodes, {len(links)} links for export")
+        print("DEBUG: MininetExporter - Node details:")
+        for node in nodes:
+            name = node.get('name', 'Unnamed')
+            node_type = node.get('type', 'Unknown')
+            print(f"  - {name} ({node_type})")
+        
         if not nodes:
             self.main_window.showCanvasStatus("No components found to export!")
             return
@@ -64,9 +71,16 @@ class MininetExporter:
         # Categorize nodes by type for proper script generation
         categorized_nodes = self.categorize_nodes(nodes)
         
+        print(f"DEBUG: MininetExporter - Categorized nodes:")
+        for category, items in categorized_nodes.items():
+            if items:
+                print(f"  {category}: {len(items)} items")
+        
         try:
             with open(filename, "w") as f:
                 self.write_mininet_script(f, nodes, links, categorized_nodes)
+            
+            print(f"DEBUG: MininetExporter - Successfully wrote script to {filename}")
             
             # Create config files for 5G components
             if categorized_nodes.get('core5g') or categorized_nodes.get('core5g_components'):
