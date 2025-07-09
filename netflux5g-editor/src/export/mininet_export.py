@@ -387,7 +387,8 @@ class MininetExporter:
         f.write('            # Check for hybrid wireless + Docker mode\n')
         f.write('            if HYBRID_WIRELESS_AVAILABLE and "mode" in kwargs:\n')
         f.write('                # Hybrid Docker+Wireless mode\n')
-        f.write('                print(f"Creating hybrid Docker+Wireless container: {node_name} (mode: {kwargs.get(\\"mode\\", \\"unknown\\")})")\n')
+        f.write('                mode_value = kwargs.get("mode", "unknown")\n')
+        f.write('                print(f"Creating hybrid Docker+Wireless container: {node_name} (mode: {mode_value})")\n')
         f.write('                docker_kwargs = {"cls": DockerSta}\n')
         f.write('                # Map all parameters including wireless ones\n')
         f.write('                for key, value in kwargs.items():\n')
@@ -668,11 +669,11 @@ logger:
         if dynamic_network_name:
             f.write(f'    # Dynamic network mode based on topology file: {os.path.basename(self.main_window.current_file) if self.main_window.current_file else "Unknown"}\n')
             f.write(f'    NETWORK_MODE = "{dynamic_network_name}"\n')
-            f.write(f'    info(f"*** Using Docker network: {{NETWORK_MODE}}\\n")\n')
+            f.write('    info(f"*** Using Docker network: {NETWORK_MODE}\\n")\n')
         else:
             f.write(f'    # Default network mode when no file is loaded\n')
             f.write(f'    NETWORK_MODE = "open5gs-ueransim_default"\n')
-            f.write(f'    info(f"*** Using default Docker network: {{NETWORK_MODE}}\\n")\n')
+            f.write('    info(f"*** Using default Docker network: {NETWORK_MODE}\\n")\n')
         f.write('    \n')
         
         # Create necessary directories
@@ -1684,9 +1685,9 @@ logger:
                     gnb_name = self.sanitize_variable_name(gnb['name'])
                     config_file = f"{gnb_name}.yaml"
                     # Replace placeholder with actual AMF IP
-                    f.write(f'    result = {gnb_name}.cmd(f"sed -i \\"s/AMF_CONTAINER_IP_PLACEHOLDER/${{amf_ip}}/g\\" /config/{config_file}")\n')
+                    f.write(f'    result = {gnb_name}.cmd("sed -i \\"s/AMF_CONTAINER_IP_PLACEHOLDER/${{amf_ip}}/g\\" /config/{config_file}")\n')
                     # Also replace any hardcoded AMF IPs
-                    f.write(f'    result = {gnb_name}.cmd(f"sed -i \\"s/172.18.0.10/${{amf_ip}}/g\\" /config/{config_file}")\n')
+                    f.write(f'    result = {gnb_name}.cmd("sed -i \\"s/172.18.0.10/${{amf_ip}}/g\\" /config/{config_file}")\n')
                     f.write(f'    print(f"Updated {gnb_name} config with AMF IP: {{amf_ip}}")\n')
                 f.write('\n')
             
@@ -1715,14 +1716,14 @@ logger:
                         ue_name = self.sanitize_variable_name(ue['name'])
                         config_file = f"{ue_name}.yaml"
                         # Replace placeholder with actual gNB IP using double quotes for variable expansion
-                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/GNB_CONTAINER_IP_PLACEHOLDER/${{gnb_ip}}/g\\" /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd("sed -i \\"s/GNB_CONTAINER_IP_PLACEHOLDER/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         # Also replace any remaining hardcoded IPs
-                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/10.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd("sed -i \\"s/10.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         f.write(f'    print(f"Updated {ue_name} config with gNB IP: {{gnb_ip}}")\n')
                         # Verify the change
                         f.write(f'    verify = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file}")\n')
                         f.write(f'    print(f"Verification for {ue_name}: {{verify}}")\n')
-                        f.write(f'    result = {ue_name}.cmd(f"sed -i \\"s/127.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
+                        f.write(f'    result = {ue_name}.cmd("sed -i \\"s/127.0.0.1/${{gnb_ip}}/g\\" /config/{config_file}")\n')
                         # Verify the change
                         f.write(f'    updated_ip = {ue_name}.cmd("grep gnbSearchList -A1 /config/{config_file} | tail -1 | tr -d \' -\'")\n')
                         f.write(f'    print(f"Updated {ue_name} gNB IP to: {{updated_ip}}")\n')
