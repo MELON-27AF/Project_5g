@@ -244,6 +244,14 @@ class MininetExporter:
         f.write('apply_compatibility_patches()\n')
         f.write('\n')
         
+        # Setup Python path for Containernet (fixed path for NetFlux5G)
+        f.write('# Setup Python path for Containernet\n')
+        f.write('import sys\n')
+        f.write('containernet_path = "/home/melon/containernet"\n')
+        f.write('if containernet_path not in sys.path:\n')
+        f.write('    sys.path.insert(0, containernet_path)\n')
+        f.write('\n')
+        
         # Import strategy optimized for Docker containers with 5G components
         # Strategy 1: Try containernet first if needed (best for Docker containers)
         if has_docker:
@@ -267,6 +275,9 @@ class MininetExporter:
             f.write('# Try mininet-wifi with containernet for wireless + Docker support\n')
             f.write('if CONTAINERNET_AVAILABLE:\n')
             f.write('    try:\n')
+            f.write('        # Import mininet modules in specific order to avoid circular imports\n')
+            f.write('        import mininet.util  # Load util first\n')
+            f.write('        import mininet.node  # Load node before link\n')
             f.write('        from mn_wifi.net import Mininet_wifi\n')
             f.write('        from mn_wifi.node import Station, OVSKernelAP\n')
             f.write('        from mn_wifi.link import wmediumd\n')
@@ -283,6 +294,9 @@ class MininetExporter:
             f.write('# Try mininet-wifi for wireless support (if containernet not available)\n')
             f.write('if not CONTAINERNET_AVAILABLE:\n')
             f.write('    try:\n')
+            f.write('        # Import mininet modules in specific order to avoid circular imports\n')
+            f.write('        import mininet.util  # Load util first (with fmtBps patch)\n')
+            f.write('        import mininet.node  # Load node before link\n')
             f.write('        from mn_wifi.net import Mininet_wifi\n')
             f.write('        from mn_wifi.node import Station, OVSKernelAP\n')
             f.write('        from mn_wifi.link import wmediumd\n')
