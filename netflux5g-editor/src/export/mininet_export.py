@@ -29,6 +29,25 @@ class MininetExporter:
     def __init__(self, main_window):
         self.main_window = main_window
         
+        # Configuration options for switch creation behavior
+        self.auto_create_default_switch = True  # Create s1 when no switches/APs exist
+        self.auto_create_management_switch = True  # Create s999 for container connectivity
+        self.respect_explicit_topology = True  # Don't create default switches if user has defined links
+        
+    def configure_switch_behavior(self, auto_default=True, auto_management=True, respect_topology=True):
+        """Configure automatic switch creation behavior.
+        
+        Args:
+            auto_default (bool): Automatically create s1 switch for 5G components when no switches exist
+            auto_management (bool): Automatically create s999 management switch for unconnected containers  
+            respect_topology (bool): Don't create default switches if user has defined explicit links
+        """
+        self.auto_create_default_switch = auto_default
+        self.auto_create_management_switch = auto_management
+        self.respect_explicit_topology = respect_topology
+        
+        debug_print(f"DEBUG: Switch creation configured - default:{auto_default}, management:{auto_management}, respect_topology:{respect_topology}")
+        
     def export_to_mininet(self, skip_save_check=False):
         """Export the current topology to a Mininet script.
         
@@ -629,11 +648,21 @@ logger:
         # Add default links for 5G components if no explicit links are defined
         has_5g_components = bool(categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g'])
         has_switches_or_aps = bool(categorized_nodes['aps'] or categorized_nodes['switches'])
+        has_explicit_links = bool(links and len(links) > 0)
         
         f.write(f'    # Debug: has_5g_components={has_5g_components}, has_switches_or_aps={has_switches_or_aps}, links={len(links) if links else 0}\n')
         
-        if has_5g_components and not has_switches_or_aps:
-            f.write('    # Add default connectivity for 5G components\n')
+        # Only create default switch if there are 5G components but NO switches/APs AND NO explicit links
+        # This is more conservative - if user has defined links, respect their topology design
+        should_create_default = (
+            self.auto_create_default_switch and
+            has_5g_components and 
+            not has_switches_or_aps and 
+            (not self.respect_explicit_topology or not has_explicit_links)
+        )
+        
+        if should_create_default:
+            f.write('    # Add default connectivity for 5G components (no explicit topology defined)\n')
             f.write('    print("*** Creating default switch for 5G component connectivity")\n')
             f.write('    default_switch = net.addSwitch("s1", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
             
@@ -1406,7 +1435,7 @@ logger:
                 f.write(f'    info("*** Add {comp_type}\\n")\n')
                 
                 for i, component in enumerate(components, 1):
-                    comp_name = self.sanitize_variable_name(component.get('name', f'{comp_type.lower()}{i}'))
+                    comp_name = self.sanitize_variable_name(component.get('name', f'{comp_type.lower()}1'))
                     
                     # Build component parameters following fixed_topology-upf.py pattern
                     f.write(f'    # Build {comp_type} parameters\n')
@@ -2284,16 +2313,23 @@ disablePeriodicRegistration: false
             f.write(f'        containers_without_interfaces.append("{container_name}")\n')
         
         f.write('    \n')
-        f.write('    # Create a management switch if containers need connectivity\n')
+        f.write('    # Create a management switch only if containers truly need connectivity\n')
+        f.write('    # and no other connectivity mechanism exists\n')
         f.write('    if containers_without_interfaces:\n')
-        f.write('        print(f"*** Creating management connectivity for containers: {containers_without_interfaces}")\n')
-        f.write('        s999 = net.addSwitch("s999", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
+        f.write('        # Check if we already have other switches that could provide connectivity\n')
+        f.write('        existing_switches = [name for name in locals() if name.startswith("s") and name[1:].isdigit()]\n')
         f.write('        \n')
-        f.write('        for container_name in containers_without_interfaces:\n')
-        f.write('            try:\n')
-        f.write('                container = locals()[container_name]\n')
-        f.write('                net.addLink(s999, container)\n')
-        f.write('                print(f"*** Connected {container_name} to management switch")\n')
-        f.write('            except Exception as e:\n')
-        f.write('                print(f"*** Warning: Failed to connect {container_name}: {e}")\n')
+        f.write(f'        if {self.auto_create_management_switch} and not existing_switches:\n')
+        f.write('            print(f"*** Creating management connectivity for containers: {containers_without_interfaces}")\n')
+        f.write('            s999 = net.addSwitch("s999", cls=OVSKernelSwitch, protocols="OpenFlow14")\n')
+        f.write('            \n')
+        f.write('            for container_name in containers_without_interfaces:\n')
+        f.write('                try:\n')
+        f.write('                    container = locals()[container_name]\n')
+        f.write('                    net.addLink(s999, container)\n')
+        f.write('                    print(f"*** Connected {container_name} to management switch")\n')
+        f.write('                except Exception as e:\n')
+        f.write('                    print(f"*** Warning: Failed to connect {container_name}: {e}")\n')
+        f.write('        else:\n')
+        f.write('            print(f"*** Skipping management switch - existing switches available: {existing_switches}")\n')
         f.write('    \n')
