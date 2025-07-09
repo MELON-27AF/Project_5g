@@ -271,22 +271,13 @@ class MininetExporter:
             f.write('    CONTAINERNET_AVAILABLE = False\n')
             f.write('\n')
             
-            # Also try mininet-wifi with containernet for wireless + Docker
-            f.write('# Try mininet-wifi with containernet for wireless + Docker support\n')
+            # For hybrid mode (Docker + wireless), avoid mininet-wifi to prevent wmediumd issues
+            f.write('# For hybrid mode (Docker + wireless positioning), avoid mininet-wifi to prevent wmediumd issues\n')
+            f.write('# Use Containernet only and handle wireless positioning manually\n')
             f.write('if CONTAINERNET_AVAILABLE:\n')
-            f.write('    try:\n')
-            f.write('        # Import mininet modules in specific order to avoid circular imports\n')
-            f.write('        import mininet.util  # Load util first\n')
-            f.write('        import mininet.node  # Load node before link\n')
-            f.write('        from mn_wifi.net import Mininet_wifi\n')
-            f.write('        from mn_wifi.node import Station, OVSKernelAP\n')
-            f.write('        from mn_wifi.link import wmediumd\n')
-            f.write('        from mn_wifi.wmediumdConnector import interference\n')
-            f.write('        WIFI_AVAILABLE = True\n')
-            f.write('        print("✓ mininet-wifi + containernet available - full wireless Docker support")\n')
-            f.write('    except ImportError as e:\n')
-            f.write('        print(f"Note: mininet-wifi not available with containernet: {e}")\n')
-            f.write('        WIFI_AVAILABLE = False\n')
+            f.write('    print("Note: Using Containernet only to avoid wmediumd socket issues in hybrid mode")\n')
+            f.write('    print("      Wireless positioning will be handled through Docker container parameters")\n')
+            f.write('    WIFI_AVAILABLE = False  # Disable wifi to force Containernet-only mode\n')
             f.write('\n')
         
         # Strategy 2: Try mininet-wifi only if containernet is not available or not needed
@@ -620,6 +611,11 @@ logger:
         f.write('    import os\n')
         f.write('    cwd = os.getcwd()  # Current Working Directory\n\n')
         
+        # Add nodes list for component detection
+        f.write('    # Component list for detection\n')
+        f.write(f'    nodes = {nodes}\n')
+        f.write('\n')
+        
         # Get dynamic network name for 5G components
         dynamic_network_name = None
         if hasattr(self.main_window, 'docker_network_manager'):
@@ -679,13 +675,12 @@ logger:
         # Check for Docker components
         f.write('    # Check for Docker components in this topology\n')
         f.write('    has_docker_components = bool(\n')
-        f.write('        CONTAINERNET_AVAILABLE and (\n')
-        for comp_type in ['gnbs', 'ues', 'dockers']:
-            f.write(f'            {comp_type}_present or\n')
-        # Add 5G core components
-        f.write('            core5g_present\n')
-        f.write('        )\n')
+        f.write('        len([n for n in nodes if n.get("type") in ["UE", "GNB", "DockerHost", "VGcore"]]) > 0\n')
         f.write('    )\n')
+        f.write('    gnbs_present = len([n for n in nodes if n.get("type") == "GNB"]) > 0\n')
+        f.write('    ues_present = len([n for n in nodes if n.get("type") == "UE"]) > 0\n')
+        f.write('    dockers_present = len([n for n in nodes if n.get("type") == "DockerHost"]) > 0\n')
+        f.write('    core5g_present = len([n for n in nodes if n.get("type") == "VGcore"]) > 0\n')
         f.write('\n')
         
         # Add controllers
@@ -799,42 +794,26 @@ logger:
         f.write('    net.stop()\n\n')
 
     def write_network_initialization(self, f, categorized_nodes):
-        """Write network initialization code following fixed_topology-upf.py pattern."""
+        """Write network initialization code avoiding wmediumd issues."""
         has_wireless = (categorized_nodes['aps'] or categorized_nodes['stas'] or 
                        categorized_nodes['ues'] or categorized_nodes['gnbs'])
         has_docker = (categorized_nodes['docker_hosts'] or categorized_nodes['ues'] or 
                      categorized_nodes['gnbs'] or categorized_nodes['core5g'])
         
-        # Priority: Containernet > Mininet-wifi > Standard Mininet
-        # Always prefer Containernet when Docker containers are needed
         f.write('    # Network initialization based on component requirements\n')
-        f.write('    if CONTAINERNET_AVAILABLE:\n')
-        f.write('        # Use Containernet (can handle both Docker and wireless)\n')
-        if has_wireless:
-            f.write('        if WIFI_AVAILABLE:\n')
-            f.write('            # Containernet with wireless support (hybrid approach)\n')
-            f.write('            # Use Containernet but without wmediumd to avoid socket issues\n')
-            f.write('            net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-            f.write('            print("Using Containernet with wireless positioning (wmediumd disabled for stability)")\n')
-            f.write('        else:\n')
-            f.write('            net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-            f.write('            print("Using Containernet (wireless features limited)")\n')
-        else:
-            f.write('        net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-            f.write('        print("Using Containernet for Docker container support")\n')
-        f.write('    elif WIFI_AVAILABLE:\n')
-        f.write('        # Use Mininet-WiFi for wireless (Docker will fallback to Host)\n')
-        f.write('        # Disable wmediumd to avoid socket connection issues\n')
+        f.write('    # For Docker containers, always use Containernet to avoid wmediumd issues\n')
+        f.write('    if CONTAINERNET_AVAILABLE and has_docker_components:\n')
+        f.write('        # Use Containernet for Docker containers (avoids wmediumd issues)\n')
+        f.write('        net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
+        f.write('        print("Using Containernet for Docker containers (wmediumd avoided)")\n')
+        f.write('    elif WIFI_AVAILABLE and not has_docker_components:\n')
+        f.write('        # Use Mininet-WiFi only for pure wireless without Docker\n')
         f.write('        net = Mininet_wifi(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        f.write('        print("Using Mininet-WiFi without wmediumd (Docker containers will use Host fallback)")\n')
+        f.write('        print("Using Mininet-WiFi for wireless (no Docker containers)")\n')
         f.write('    else:\n')
         f.write('        # Standard Mininet fallback\n')
         f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        f.write('        if has_docker:\n')
-        f.write('            print("Using standard Mininet (Docker containers will use Host fallback)")\n')
-        f.write('        else:\n')
-        f.write('            print("Using standard Mininet")\n')
-        
+        f.write('        print("Using standard Mininet")\n')
         f.write('\n')
 
     def write_controllers(self, f, categorized_nodes):
