@@ -62,22 +62,32 @@ class AutomationRunner(QObject):
         # Check if we have components to export
         nodes, links = self.main_window.extractTopology()
         
-        # DEBUG: Print what was extracted
-        debug_print(f"DEBUG: Extracted topology - {len(nodes)} nodes, {len(links)} links")
-        debug_print("DEBUG: Node types and names:")
+        # DEBUG: Print what was extracted (force print for debugging)
+        print(f"DEBUG: Extracted topology - {len(nodes)} nodes, {len(links)} links")
+        print("DEBUG: Node types and names:")
         for node in nodes:
             name = node.get('name', 'Unnamed')
             node_type = node.get('type', 'Unknown')
-            debug_print(f"  - {name} ({node_type})")
+            x = node.get('x', '?')
+            y = node.get('y', '?')
+            print(f"  - {name} ({node_type}) at ({x}, {y})")
+        
+        print("DEBUG: Link details:")
+        for i, link in enumerate(links):
+            source = link.get('source', '?')
+            target = link.get('target', '?')
+            print(f"  {i+1}. {source} -> {target}")
         
         # Check what file is currently loaded
         if hasattr(self.main_window, 'current_file') and self.main_window.current_file:
-            debug_print(f"DEBUG: Current file: {self.main_window.current_file}")
+            print(f"DEBUG: Current file: {self.main_window.current_file}")
         elif hasattr(self.main_window, 'is_template_loaded') and self.main_window.is_template_loaded:
             template_name = getattr(self.main_window, 'template_name', 'Unknown')
-            debug_print(f"DEBUG: Template loaded: {template_name}")
+            print(f"DEBUG: Template loaded: {template_name}")
         else:
-            debug_print("DEBUG: No file loaded or new topology")
+            print("DEBUG: No file loaded or new topology")
+        
+        print("="*60)
         
         core5g_components = [n for n in nodes if n['type'] == 'VGcore']
         

@@ -582,13 +582,20 @@ class FileManager:
         nodes = []
         links = []
         
+        print("DEBUG: Starting extractTopology - checking canvas scene...")
+        
         if not hasattr(self.main_window, 'canvas_view') or not hasattr(self.main_window.canvas_view, 'scene'):
+            print("DEBUG: No canvas_view or scene found!")
             return nodes, links
+        
+        print(f"DEBUG: Canvas scene has {len(self.main_window.canvas_view.scene.items())} total items")
         
         from gui.links import NetworkLink
         
         for item in self.main_window.canvas_view.scene.items():
+            print(f"DEBUG: Processing item: {type(item).__name__}")
             if hasattr(item, 'component_type'):  # NetworkComponent
+                print(f"DEBUG: Found component - type: {item.component_type}, display_name: {getattr(item, 'display_name', 'None')}")
                 # Extract comprehensive node data
                 node_data = {
                     'name': getattr(item, 'display_name', item.component_type),
@@ -608,6 +615,7 @@ class FileManager:
                 nodes.append(node_data)
                 
             elif isinstance(item, NetworkLink):  # NetworkLink
+                print(f"DEBUG: Found link between {getattr(item.source_node, 'display_name', 'Unknown')} and {getattr(item.dest_node, 'display_name', 'Unknown')}")
                 source_name = getattr(item.source_node, 'display_name', 
                                     getattr(item.source_node, 'component_type', 'Unknown'))
                 dest_name = getattr(item.dest_node, 'display_name', 
@@ -623,6 +631,7 @@ class FileManager:
                 }
                 links.append(link_data)
         
+        print(f"DEBUG: Extraction complete - {len(nodes)} nodes, {len(links)} links")
         debug_print(f"DEBUG: Total extracted - {len(nodes)} nodes, {len(links)} links")
         return nodes, links
 
