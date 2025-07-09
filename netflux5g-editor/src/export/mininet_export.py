@@ -825,21 +825,6 @@ logger:
             f.write('    print("Using standard Mininet")\n')
         
         f.write('\n')
-            f.write('        print("Using standard Mininet (containernet and mininet-wifi not available)")\n')
-            f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        elif has_wireless:
-            f.write('    # Use mininet-wifi if available, otherwise fallback to standard Mininet\n')
-            f.write('    if WIFI_AVAILABLE:\n')
-            f.write('        net = Mininet_wifi(topo=None,\n')
-            f.write('                           build=False,\n')
-            f.write('                           link=wmediumd, wmediumd_mode=interference,\n')
-            f.write('                           ipBase=\'10.0.0.0/8\')\n')
-            f.write('    else:\n')
-            f.write('        print("Using standard Mininet (mininet-wifi not available)")\n')
-            f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        else:
-            f.write('    net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        f.write('\n')
 
     def write_controllers(self, f, categorized_nodes):
         """Write controller creation code following fixed_topology-upf.py pattern."""
