@@ -128,8 +128,20 @@ class MininetExporter:
             'core5g': [n for n in nodes if n['type'] == 'VGcore']
         }
         
+        # Debug output for node categorization
+        print(f"DEBUG: Categorized nodes:")
+        for category, items in categorized.items():
+            print(f"  {category}: {len(items)} items")
+            if items and category in ['ues', 'gnbs', 'core5g']:
+                for item in items:
+                    print(f"    - {item.get('name', 'unnamed')} ({item.get('type', 'unknown')})")
+        
         # Extract 5G core components from VGcore configurations
         categorized['core5g_components'] = self.extract_5g_components_by_type(categorized['core5g'])
+        
+        print(f"DEBUG: 5G core components extracted: {len(categorized['core5g_components'])} components")
+        for comp_type, comp_data in categorized['core5g_components'].items():
+            print(f"  {comp_type}: {comp_data}")
         
         return categorized
 
@@ -244,12 +256,29 @@ class MininetExporter:
         f.write('apply_compatibility_patches()\n')
         f.write('\n')
         
-        # Setup Python path for Containernet (try multiple paths)
-        f.write('# Setup Python path for Containernet\n')
+        # Setup Python path for Containernet (enhanced sudo support)
+        f.write('# Setup Python path for Containernet with sudo environment support\n')
         f.write('import sys\n')
         f.write('import os\n')
+        f.write('import pwd\n')
+        f.write('\n')
+        f.write('# Get the original user (when running with sudo)\n')
+        f.write('def get_original_user_home():\n')
+        f.write('    if "SUDO_USER" in os.environ:\n')
+        f.write('        try:\n')
+        f.write('            sudo_user = os.environ["SUDO_USER"]\n')
+        f.write('            user_info = pwd.getpwnam(sudo_user)\n')
+        f.write('            return user_info.pw_dir\n')
+        f.write('        except:\n')
+        f.write('            pass\n')
+        f.write('    return os.path.expanduser("~")\n')
+        f.write('\n')
+        f.write('original_home = get_original_user_home()\n')
+        f.write('\n')
         f.write('# Try multiple possible Containernet installation paths\n')
         f.write('containernet_paths = [\n')
+        f.write('    f"{original_home}/containernet/containernet",\n')
+        f.write('    f"{original_home}/containernet",\n')
         f.write('    "/home/melon/containernet/containernet",\n')
         f.write('    "/home/melon/containernet",\n')
         f.write('    "/opt/containernet",\n')
@@ -257,6 +286,7 @@ class MininetExporter:
         f.write('    os.path.expanduser("~/containernet/containernet"),\n')
         f.write('    os.path.expanduser("~/containernet")\n')
         f.write(']\n')
+        f.write('\n')
         f.write('containernet_found = False\n')
         f.write('for path in containernet_paths:\n')
         f.write('    if os.path.exists(path) and path not in sys.path:\n')
@@ -264,14 +294,17 @@ class MininetExporter:
         f.write('        containernet_found = True\n')
         f.write('        print(f"✓ Added Containernet path: {path}")\n')
         f.write('        break\n')
+        f.write('\n')
         f.write('if not containernet_found:\n')
-        f.write('    print("Warning: Containernet path not found, trying import anyway...")\n')
+        f.write('    print(f"Warning: Containernet path not found in any of: {containernet_paths}")\n')
+        f.write('    print("Trying import anyway...")\n')
         f.write('\n')
         
         # Import strategy optimized for Docker containers with 5G components
         # Strategy 1: Try containernet first if needed (best for Docker containers)
         if has_docker:
             f.write('# Try containernet first for Docker support\n')
+            f.write('print("*** ATTEMPTING TO IMPORT CONTAINERNET ***")\n')
             f.write('try:\n')
             f.write('    from containernet.net import Containernet\n')
             f.write('    from containernet.node import DockerSta\n')
@@ -281,9 +314,9 @@ class MininetExporter:
             f.write('    from mininet.link import TCLink, Link, Intf\n')
             f.write('    from containernet.term import makeTerm as makeTerm2\n')
             f.write('    CONTAINERNET_AVAILABLE = True\n')
-            f.write('    print("✓ containernet available - using Docker support")\n')
+            f.write('    print("✓ ✓ ✓ CONTAINERNET AVAILABLE - USING DOCKER SUPPORT ✓ ✓ ✓")\n')
             f.write('except ImportError as e:\n')
-            f.write('    print(f"Warning: containernet import failed: {e}")\n')
+            f.write('    print(f"✗ ✗ ✗ CONTAINERNET IMPORT FAILED: {e} ✗ ✗ ✗")\n')
             f.write('    CONTAINERNET_AVAILABLE = False\n')
             f.write('\n')
             
@@ -804,6 +837,7 @@ logger:
         self.write_ap_startup(f, categorized_nodes)
         
         # Start 5G components (without rebuilding network)
+        f.write('    print("*** ABOUT TO CALL write_5g_startup ***")\n')
         self.write_5g_startup(f, categorized_nodes)
         
         # CLI and cleanup
@@ -821,18 +855,19 @@ logger:
         
         f.write('    # Network initialization based on component requirements\n')
         f.write('    # For Docker containers, always use Containernet to avoid wmediumd issues\n')
+        f.write('    print(f"*** Network setup debug: CONTAINERNET_AVAILABLE={CONTAINERNET_AVAILABLE}, has_docker_components={has_docker_components}")\n')
         f.write('    if CONTAINERNET_AVAILABLE and has_docker_components:\n')
         f.write('        # Use Containernet for Docker containers (avoids wmediumd issues)\n')
         f.write('        net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        f.write('        print("Using Containernet for Docker containers (wmediumd avoided)")\n')
+        f.write('        print("*** USING CONTAINERNET FOR DOCKER CONTAINERS ***")\n')
         f.write('    elif WIFI_AVAILABLE and not has_docker_components:\n')
         f.write('        # Use Mininet-WiFi only for pure wireless without Docker\n')
         f.write('        net = Mininet_wifi(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        f.write('        print("Using Mininet-WiFi for wireless (no Docker containers)")\n')
+        f.write('        print("*** USING MININET-WIFI FOR WIRELESS ***")\n')
         f.write('    else:\n')
         f.write('        # Standard Mininet fallback\n')
         f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-        f.write('        print("Using standard Mininet")\n')
+        f.write('        print("*** USING STANDARD MININET (FALLBACK) ***")\n')
         f.write('\n')
 
     def write_controllers(self, f, categorized_nodes):
@@ -1567,7 +1602,14 @@ logger:
 
     def write_5g_startup(self, f, categorized_nodes):
         """Write 5G component startup commands following fixed_topology-upf.py pattern."""
+        f.write('    print("*** STARTING 5G STARTUP SEQUENCE ***")\n')
+        f.write('    print(f"*** Core components available: {len(categorized_nodes.get("core5g_components", {}))}")\n')
+        f.write('    print(f"*** gNBs available: {len(categorized_nodes.get("gnbs", []))}")\n')
+        f.write('    print(f"*** UEs available: {len(categorized_nodes.get("ues", []))}")\n')
+        f.write('    print(f"*** Core5g available: {len(categorized_nodes.get("core5g", []))}")\n')
+        
         if not (categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']):
+            f.write('    print("*** WARNING: No 5G components found - skipping 5G startup ***")\n')
             return
             
         # Get core components for startup sequence
