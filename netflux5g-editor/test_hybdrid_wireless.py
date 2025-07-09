@@ -61,7 +61,13 @@ def test_hybrid_wireless_export():
     test_links = []  # No explicit links - use wireless connectivity
     
     # Export topology
-    exporter = MininetExporter()
+    class MockMainWindow:
+        """Mock main window for testing."""
+        def __init__(self):
+            self.auto_create_default_switch = True
+            self.respect_explicit_topology = False
+    
+    exporter = MininetExporter(MockMainWindow())
     
     try:
         output_file = "/tmp/test_hybrid_wireless.py"
