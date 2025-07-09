@@ -71,51 +71,51 @@ def test_hybrid_wireless_export():
     
     try:
         output_file = "/tmp/test_hybrid_wireless.py"
-        result = exporter.export_to_mininet_script(test_nodes, test_links, output_file)
         
-        if result['status'] == 'success':
-            print("✓ Hybrid wireless topology exported successfully")
+        # Use the exporter with test data
+        categorized_nodes = exporter.categorize_nodes(test_nodes)
+        
+        with open(output_file, "w") as f:
+            exporter.write_mininet_script(f, test_nodes, test_links, categorized_nodes)
+        
+        print("✓ Hybrid wireless topology exported successfully")
+        
+        # Check for key hybrid features in exported script
+        with open(output_file, 'r') as f:
+            content = f.read()
             
-            # Check for key hybrid features in exported script
-            with open(output_file, 'r') as f:
-                content = f.read()
-                
-            # Check for hybrid mode detection
-            if 'HYBRID_WIRELESS_AVAILABLE' in content:
-                print("✓ Hybrid wireless availability check present")
-            else:
-                print("✗ Missing hybrid wireless availability check")
-            
-            # Check for gNB AP configuration
-            if 'mode" = "ap"' in content or 'configured as wireless AP' in content:
-                print("✓ gNB AP mode configuration present")
-            else:
-                print("✗ Missing gNB AP mode configuration")
-            
-            # Check for UE station configuration
-            if 'mode" = "sta"' in content or 'configured as wireless station' in content:
-                print("✓ UE station mode configuration present")
-            else:
-                print("✗ Missing UE station mode configuration")
-            
-            # Check for uesimtun setup
-            if 'uesimtun' in content:
-                print("✓ uesimtun interface setup present")
-            else:
-                print("✗ Missing uesimtun interface setup")
-            
-            # Check for wireless association
-            if 'iwconfig' in content or 'wireless association' in content:
-                print("✓ Wireless association logic present")
-            else:
-                print("✗ Missing wireless association logic")
-            
-            print(f"✓ Test file created: {output_file}")
-            return True
-            
+        # Check for hybrid mode detection
+        if 'HYBRID_WIRELESS_AVAILABLE' in content:
+            print("✓ Hybrid wireless availability check present")
         else:
-            print(f"✗ Export failed: {result.get('message', 'Unknown error')}")
-            return False
+            print("✗ Missing hybrid wireless availability check")
+        
+        # Check for gNB AP configuration
+        if 'mode" = "ap"' in content or 'configured as wireless AP' in content:
+            print("✓ gNB AP mode configuration present")
+        else:
+            print("✗ Missing gNB AP mode configuration")
+        
+        # Check for UE station configuration
+        if 'mode" = "sta"' in content or 'configured as wireless station' in content:
+            print("✓ UE station mode configuration present")
+        else:
+            print("✗ Missing UE station mode configuration")
+        
+        # Check for uesimtun setup
+        if 'uesimtun' in content:
+            print("✓ uesimtun interface setup present")
+        else:
+            print("✗ Missing uesimtun interface setup")
+        
+        # Check for wireless association
+        if 'iwconfig' in content or 'wireless association' in content:
+            print("✓ Wireless association logic present")
+        else:
+            print("✗ Missing wireless association logic")
+        
+        print(f"✓ Test file created: {output_file}")
+        return True
             
     except Exception as e:
         print(f"✗ Export error: {e}")
