@@ -1622,14 +1622,17 @@ logger:
     def write_5g_startup(self, f, categorized_nodes):
         """Write 5G component startup commands following fixed_topology-upf.py pattern."""
         f.write('    print("*** STARTING 5G STARTUP SEQUENCE ***")\n')
-        f.write('    core5g_components = categorized_nodes.get("core5g_components", {})\n')
-        f.write('    gnbs = categorized_nodes.get("gnbs", [])\n')
-        f.write('    ues = categorized_nodes.get("ues", [])\n')
-        f.write('    core5g = categorized_nodes.get("core5g", [])\n')
-        f.write('    print(f"*** Core components available: {len(core5g_components)}")\n')
-        f.write('    print(f"*** gNBs available: {len(gnbs)}")\n')
-        f.write('    print(f"*** UEs available: {len(ues)}")\n')
-        f.write('    print(f"*** Core5g available: {len(core5g)}")\n')
+        
+        # Count components at export time
+        core5g_count = len(categorized_nodes.get('core5g_components', {}))
+        gnbs_count = len(categorized_nodes.get('gnbs', []))
+        ues_count = len(categorized_nodes.get('ues', []))
+        core5g_nodes_count = len(categorized_nodes.get('core5g', []))
+        
+        f.write(f'    print("*** Core components available: {core5g_count}")\n')
+        f.write(f'    print("*** gNBs available: {gnbs_count}")\n')
+        f.write(f'    print("*** UEs available: {ues_count}")\n')
+        f.write(f'    print("*** Core5g available: {core5g_nodes_count}")\n')
         
         if not (categorized_nodes['gnbs'] or categorized_nodes['ues'] or categorized_nodes['core5g']):
             f.write('    print("*** WARNING: No 5G components found - skipping 5G startup ***")\n')
