@@ -794,35 +794,38 @@ logger:
                      categorized_nodes['gnbs'] or categorized_nodes['core5g'])
         
         # Priority: Containernet > Mininet-wifi > Standard Mininet
-        if has_docker:
-            f.write('    # Use Containernet for Docker support, with fallbacks\n')
-            f.write('    if CONTAINERNET_AVAILABLE:\n')
+        # Always prefer Containernet when Docker containers are needed
+        f.write('    # Network initialization based on component requirements\n')
+        f.write('    if CONTAINERNET_AVAILABLE:\n')
+        f.write('        # Use Containernet (can handle both Docker and wireless)\n')
+        if has_wireless:
+            f.write('        if WIFI_AVAILABLE:\n')
+            f.write('            # Containernet with wireless support (hybrid approach)\n')
+            f.write('            net = Mininet_wifi(topo=None,\n')
+            f.write('                               build=False,\n')
+            f.write('                               link=wmediumd, wmediumd_mode=interference,\n')
+            f.write('                               ipBase=\'10.0.0.0/8\')\n')
+            f.write('            print("Using Mininet-WiFi with Containernet Docker support")\n')
+            f.write('        else:\n')
+            f.write('            net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
+            f.write('            print("Using Containernet (wireless features limited)")\n')
+        else:
             f.write('        net = Containernet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
             f.write('        print("Using Containernet for Docker container support")\n')
-            f.write('    elif WIFI_AVAILABLE:\n')
-            f.write('        net = Mininet_wifi(topo=None,\n')
-            f.write('                           build=False,\n')
-            f.write('                           link=wmediumd, wmediumd_mode=interference,\n')
-            f.write('                           ipBase=\'10.0.0.0/8\')\n')
-            f.write('        print("Using Mininet-WiFi (Docker containers will use Host fallback)")\n')
-            f.write('    else:\n')
-            f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-            f.write('        print("Using standard Mininet (containernet and mininet-wifi not available)")\n')
-        elif has_wireless:
-            f.write('    # Use wireless network for APs/STAs\n')
-            f.write('    if WIFI_AVAILABLE:\n')
-            f.write('        net = Mininet_wifi(topo=None,\n')
-            f.write('                           build=False,\n')
-            f.write('                           link=wmediumd, wmediumd_mode=interference,\n')
-            f.write('                           ipBase=\'10.0.0.0/8\')\n')
-            f.write('        print("Using Mininet-WiFi for wireless support")\n')
-            f.write('    else:\n')
-            f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-            f.write('        print("Using standard Mininet (wireless features limited)")\n')
-        else:
-            f.write('    # Standard Mininet for basic topology\n')
-            f.write('    net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
-            f.write('    print("Using standard Mininet")\n')
+        f.write('    elif WIFI_AVAILABLE and has_wireless:\n')
+        f.write('        # Use Mininet-WiFi for wireless (Docker will fallback to Host)\n')
+        f.write('        net = Mininet_wifi(topo=None,\n')
+        f.write('                           build=False,\n')
+        f.write('                           link=wmediumd, wmediumd_mode=interference,\n')
+        f.write('                           ipBase=\'10.0.0.0/8\')\n')
+        f.write('        print("Using Mininet-WiFi (Docker containers will use Host fallback)")\n')
+        f.write('    else:\n')
+        f.write('        # Standard Mininet fallback\n')
+        f.write('        net = Mininet(topo=None, build=False, ipBase=\'10.0.0.0/8\')\n')
+        f.write('        if has_docker:\n')
+        f.write('            print("Using standard Mininet (Docker containers will use Host fallback)")\n')
+        f.write('        else:\n')
+        f.write('            print("Using standard Mininet")\n')
         
         f.write('\n')
 
@@ -1872,10 +1875,11 @@ logger:
         
         if has_wireless:
             f.write('    info("*** Configuring propagation model\\n")\n')
-            f.write('    if WIFI_AVAILABLE:\n')
+            f.write('    if WIFI_AVAILABLE and hasattr(net, "setPropagationModel"):\n')
             f.write('        net.setPropagationModel(model="logDistance", exp=4.5)\n')
+            f.write('        print("Propagation model configured")\n')
             f.write('    else:\n')
-            f.write('        print("Propagation model not available in standard Mininet")\n')
+            f.write('        print("Propagation model not available in current network type")\n')
             f.write('\n')
 
     def write_links(self, f, links, categorized_nodes):
