@@ -66,8 +66,20 @@ try:
         from containernet.cli import CLI
         from containernet.node import DockerSta
         from containernet.term import makeTerm as makeTerm2
-        NETWORK_BACKEND = "containernet"
-        print("✅ Using Containernet with Docker support")
+        
+        # Verify this is actually Containernet and not just Mininet
+        test_net = ContainernetClass()
+        if hasattr(test_net, 'addDocker'):
+            NETWORK_BACKEND = "containernet"
+            print("✅ Using Containernet with Docker support")
+            print(f"✅ Containernet class: {ContainernetClass}")
+        else:
+            print("⚠️  WARNING: Containernet imported but no addDocker method found!")
+            print(f"⚠️  Containernet class is actually: {ContainernetClass}")
+            print("⚠️  This suggests incomplete Containernet installation")
+            # Fall through to next import option
+            raise ImportError("Containernet incomplete - no addDocker method")
+        test_net.stop()  # Clean up test instance
     except ImportError:
         try:
             # Fallback to mininet-wifi
