@@ -194,9 +194,10 @@ def topology(args):
     NETWORK_MODE = "netflux5g"
     info(f"*** Using universal Docker network: {NETWORK_MODE}\n")
     
+    # Create Containernet with basic configuration
+    # Note: wmediumd_mode is not supported in standard Containernet
     net = Containernet(topo=None,
                        build=False,
-                       link=wmediumd, wmediumd_mode=interference,
                        ipBase='10.0.0.0/8')                          
 
     info("*** Adding controller\n")
