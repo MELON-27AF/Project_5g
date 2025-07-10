@@ -46,6 +46,7 @@ CLI = None
 makeTerm2 = None
 Station = None
 OVSKernelAP = None
+ContainernetClass = None
 
 try:
     # Import mininet utilities first
@@ -61,7 +62,7 @@ try:
     
     # Try to import containernet
     try:
-        from containernet.net import Containernet
+        from containernet.net import Containernet as ContainernetClass
         from containernet.cli import CLI
         from containernet.node import DockerSta
         from containernet.term import makeTerm as makeTerm2
@@ -70,7 +71,7 @@ try:
     except ImportError:
         try:
             # Fallback to mininet-wifi
-            from mn_wifi.net import Mininet_wifi as Containernet
+            from mn_wifi.net import Mininet_wifi as ContainernetClass
             from mn_wifi.cli import CLI_wifi as CLI
             from mn_wifi.node import DockerSta
             from mininet.term import makeTerm as makeTerm2
@@ -78,7 +79,7 @@ try:
             print("⚠️  Using Mininet-WiFi (limited Docker support)")
         except ImportError:
             # Final fallback to standard mininet
-            from mininet.net import Mininet as Containernet
+            from mininet.net import Mininet as ContainernetClass
             from mininet.cli import CLI
             from mininet.node import Host as DockerSta
             from mininet.term import makeTerm as makeTerm2
@@ -234,19 +235,21 @@ def topology(args):
     # Create network with appropriate backend
     if NETWORK_BACKEND == "containernet":
         # Create Containernet with basic configuration
-        net = Containernet(topo=None,
-                           build=False,
-                           ipBase='10.0.0.0/8')
+        net = ContainernetClass(topo=None,
+                               build=False,
+                               ipBase='10.0.0.0/8')
+        print(f"✅ Created Containernet instance: {type(net)}")
     elif NETWORK_BACKEND == "mininet-wifi":
         # Create Mininet-WiFi network
-        net = Containernet(topo=None,
-                           build=False,
-                           ipBase='10.0.0.0/8')
+        net = ContainernetClass(topo=None,
+                               build=False,
+                               ipBase='10.0.0.0/8')
+        print(f"✅ Created Mininet-WiFi instance: {type(net)}")
     else:
         # Create standard Mininet network
-        net = Containernet(topo=None,
-                           build=False,
-                           ipBase='10.0.0.0/8')
+        net = ContainernetClass(topo=None,
+                               build=False,
+                               ipBase='10.0.0.0/8')
         # Override addDocker method for standard Mininet
         def addDocker_fallback(name, **kwargs):
             # Remove Docker-specific parameters and add as regular host
@@ -258,7 +261,14 @@ def topology(args):
             print(f"⚠️  Adding {name} as regular host (Docker not supported)")
             return net.addHost(name, **host_kwargs)
         
-        net.addDocker = addDocker_fallback                          
+        net.addDocker = addDocker_fallback
+        print(f"✅ Created Mininet instance with Docker fallback: {type(net)}")
+    
+    # Verify addDocker method is available
+    if hasattr(net, 'addDocker'):
+        print("✅ addDocker method is available")
+    else:
+        print("❌ addDocker method not found - this will cause errors")                          
 
     info("*** Adding controller\n")
     Controller__1 = net.addController(name='Controller__1',
