@@ -39,6 +39,14 @@ if containernet_path not in sys.path:
     sys.path.insert(0, containernet_path)
 
 # Import in a specific order to avoid circular imports
+# Also add check for network backend availability
+NETWORK_BACKEND = None
+DockerSta = None
+CLI = None
+makeTerm2 = None
+Station = None
+OVSKernelAP = None
+
 try:
     # Import mininet utilities first
     from mininet.log import setLogLevel, info
@@ -51,16 +59,45 @@ try:
     from mininet.link import TCLink, Link, Intf
     from mininet.node import RemoteController, OVSKernelSwitch, Host, Node
     
-    # Import containernet
-    from containernet.net import Containernet
-    from containernet.cli import CLI
-    from containernet.node import DockerSta
-    from containernet.term import makeTerm as makeTerm2
+    # Try to import containernet
+    try:
+        from containernet.net import Containernet
+        from containernet.cli import CLI
+        from containernet.node import DockerSta
+        from containernet.term import makeTerm as makeTerm2
+        NETWORK_BACKEND = "containernet"
+        print("✅ Using Containernet with Docker support")
+    except ImportError:
+        try:
+            # Fallback to mininet-wifi
+            from mn_wifi.net import Mininet_wifi as Containernet
+            from mn_wifi.cli import CLI_wifi as CLI
+            from mn_wifi.node import DockerSta
+            from mininet.term import makeTerm as makeTerm2
+            NETWORK_BACKEND = "mininet-wifi"
+            print("⚠️  Using Mininet-WiFi (limited Docker support)")
+        except ImportError:
+            # Final fallback to standard mininet
+            from mininet.net import Mininet as Containernet
+            from mininet.cli import CLI
+            from mininet.node import Host as DockerSta
+            from mininet.term import makeTerm as makeTerm2
+            NETWORK_BACKEND = "mininet"
+            print("⚠️  Using standard Mininet (no Docker/WiFi support)")
     
-    # Import wifi modules last
-    from mn_wifi.node import Station, OVSKernelAP
-    from mn_wifi.link import wmediumd
-    from mn_wifi.wmediumdConnector import interference
+    # Try to import wifi modules
+    try:
+        from mn_wifi.node import Station, OVSKernelAP
+        from mn_wifi.link import wmediumd
+        from mn_wifi.wmediumdConnector import interference
+        print("✅ WiFi modules available")
+    except ImportError:
+        # Create fallbacks for missing WiFi functionality
+        Station = Host  # Fallback to regular host
+        OVSKernelAP = OVSKernelSwitch  # Fallback to switch
+        wmediumd = TCLink  # Fallback to regular link
+        interference = None
+        print("⚠️  WiFi modules not available - using fallbacks")
     
     print("✅ All imports successful!")
     
@@ -194,11 +231,34 @@ def topology(args):
     NETWORK_MODE = "netflux5g"
     info(f"*** Using universal Docker network: {NETWORK_MODE}\n")
     
-    # Create Containernet with basic configuration
-    # Note: wmediumd_mode is not supported in standard Containernet
-    net = Containernet(topo=None,
-                       build=False,
-                       ipBase='10.0.0.0/8')                          
+    # Create network with appropriate backend
+    if NETWORK_BACKEND == "containernet":
+        # Create Containernet with basic configuration
+        net = Containernet(topo=None,
+                           build=False,
+                           ipBase='10.0.0.0/8')
+    elif NETWORK_BACKEND == "mininet-wifi":
+        # Create Mininet-WiFi network
+        net = Containernet(topo=None,
+                           build=False,
+                           ipBase='10.0.0.0/8')
+    else:
+        # Create standard Mininet network
+        net = Containernet(topo=None,
+                           build=False,
+                           ipBase='10.0.0.0/8')
+        # Override addDocker method for standard Mininet
+        def addDocker_fallback(name, **kwargs):
+            # Remove Docker-specific parameters and add as regular host
+            host_kwargs = {}
+            if 'ip' in kwargs:
+                host_kwargs['ip'] = kwargs['ip']
+            if 'mac' in kwargs:
+                host_kwargs['mac'] = kwargs['mac']
+            print(f"⚠️  Adding {name} as regular host (Docker not supported)")
+            return net.addHost(name, **host_kwargs)
+        
+        net.addDocker = addDocker_fallback                          
 
     info("*** Adding controller\n")
     Controller__1 = net.addController(name='Controller__1',
@@ -267,27 +327,60 @@ def topology(args):
     info("*** Adding gNB with enhanced OVS/AP support\n")
     GNB__1 = net.addDocker('GNB__1', cap_add=["net_admin", "sys_nice"], network_mode=NETWORK_MODE, publish_all_ports=True, privileged=True, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', volumes=["/sys:/sys:ro", "/lib/modules:/lib/modules:ro"], position='-421.4,-52.9,0', environment={"AMF_HOSTNAME": "amf1", "GNB_HOSTNAME": "gnb1", "N2_IFACE": "eth0", "N3_IFACE": "eth0", "RADIO_IFACE": "eth0", "NETWORK_INTERFACE": "eth0", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "UERANSIM_COMPONENT": "gnb", "OVS_ENABLED": "true", "OVS_BRIDGE_NAME": "", "OVS_FAIL_MODE": "secure", "OPENFLOW_PROTOCOLS": "OpenFlow13", "OVS_DATAPATH": "kernel", "OVS_AUTO_SETUP": "true", "OVS_CONTROLLER": "tcp:netflux5g-onos-controller:6653", "CONTROLLER_IP": "netflux5g-onos-controller", "CONTROLLER_PORT": "6653", "BRIDGE_INTERFACES": "eth0", "BRIDGE_PRIORITY": "6", "STP_ENABLED": "true"})
     GNB__2 = net.addDocker('GNB__2', cap_add=["net_admin", "sys_nice"], network_mode=NETWORK_MODE, publish_all_ports=True, privileged=True, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', volumes=["/sys:/sys:ro", "/lib/modules:/lib/modules:ro"], position='298.7,-50.3,0', environment={"AMF_HOSTNAME": "amf1", "GNB_HOSTNAME": "gnb2", "N2_IFACE": "eth0", "N3_IFACE": "eth0", "RADIO_IFACE": "eth0", "NETWORK_INTERFACE": "eth0", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "UERANSIM_COMPONENT": "gnb", "OVS_ENABLED": "true", "OVS_BRIDGE_NAME": "", "OVS_FAIL_MODE": "secure", "OPENFLOW_PROTOCOLS": "OpenFlow13", "OVS_DATAPATH": "kernel", "OVS_AUTO_SETUP": "true", "OVS_CONTROLLER": "tcp:netflux5g-onos-controller:6653", "CONTROLLER_IP": "netflux5g-onos-controller", "CONTROLLER_PORT": "6653", "BRIDGE_INTERFACES": "eth0", "BRIDGE_PRIORITY": "6", "STP_ENABLED": "true"})
-    ap101 = net.addAccessPoint('ap101', cls=OVSKernelAP, ssid='gnb1-ssid', failMode='secure', datapath='kernel',
-                             channel='36', mode='a', position='-423.7,-52.9,0', range=600.0, txpower=24.0, protocols="OpenFlow13")
-    ap102 = net.addAccessPoint('ap102', cls=OVSKernelAP, ssid='gnb2-ssid', failMode='secure', datapath='kernel', 
-                             channel='36', mode='a', position='298.7,-50.3,0', range=600.0, txpower=24.0, protocols="OpenFlow13")
+    # Add WiFi functionality if available
+    if NETWORK_BACKEND in ["containernet", "mininet-wifi"] and hasattr(net, 'addAccessPoint'):
+        # Full WiFi support available
+        ap101 = net.addAccessPoint('ap101', cls=OVSKernelAP, ssid='gnb1-ssid', failMode='secure', datapath='kernel',
+                                 channel='36', mode='a', position='-423.7,-52.9,0', range=600.0, txpower=24.0, protocols="OpenFlow13")
+        ap102 = net.addAccessPoint('ap102', cls=OVSKernelAP, ssid='gnb2-ssid', failMode='secure', datapath='kernel', 
+                                 channel='36', mode='a', position='298.7,-50.3,0', range=600.0, txpower=24.0, protocols="OpenFlow13")
+    else:
+        # Fallback to regular switches for access points
+        print("⚠️  WiFi not supported - using switches as AP fallback")
+        ap101 = net.addSwitch('ap101', cls=OVSKernelSwitch, protocols="OpenFlow13")
+        ap102 = net.addSwitch('ap102', cls=OVSKernelSwitch, protocols="OpenFlow13")
 
     info("*** Adding enhanced UERANSIM UE hosts\n")
-    UE__6 = net.addStation('UE__6', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='329.1,163.3,0', environment={"GNB_HOSTNAME": "gnb2", "APN": "internet", "MSISDN": "0000000003", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
-    UE__5 = net.addStation('UE__5', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='279.8,-242.3,0', environment={"GNB_HOSTNAME": "gnb2", "APN": "internet2", "MSISDN": "0000000013", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
-    UE__4 = net.addStation('UE__4', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-44.3,-44.8,0', environment={"GNB_HOSTNAME": "gnb2", "APN": "internet2", "MSISDN": "0000000012", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
-    UE__3 = net.addStation('UE__3', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-319.1,93.5,0', environment={"GNB_HOSTNAME": "gnb1", "APN": "internet2", "MSISDN": "0000000011", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
-    UE__2 = net.addStation('UE__2', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-545.7,65.9,0', environment={"GNB_HOSTNAME": "gnb1", "APN": "internet", "MSISDN": "0000000002", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
-    UE__1 = net.addStation('UE__1', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-646.3,-127.1,0', environment={"GNB_HOSTNAME": "gnb1", "APN": "internet", "MSISDN": "0000000001", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
+    # Add UE nodes with appropriate backend
+    if NETWORK_BACKEND in ["containernet", "mininet-wifi"] and hasattr(net, 'addStation'):
+        # Full WiFi support - add as stations
+        UE__6 = net.addStation('UE__6', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='329.1,163.3,0', environment={"GNB_HOSTNAME": "gnb2", "APN": "internet", "MSISDN": "0000000003", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
+        UE__5 = net.addStation('UE__5', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='279.8,-242.3,0', environment={"GNB_HOSTNAME": "gnb2", "APN": "internet2", "MSISDN": "0000000013", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
+        UE__4 = net.addStation('UE__4', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-44.3,-44.8,0', environment={"GNB_HOSTNAME": "gnb2", "APN": "internet2", "MSISDN": "0000000012", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
+        UE__3 = net.addStation('UE__3', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-319.1,93.5,0', environment={"GNB_HOSTNAME": "gnb1", "APN": "internet2", "MSISDN": "0000000011", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
+        UE__2 = net.addStation('UE__2', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-545.7,65.9,0', environment={"GNB_HOSTNAME": "gnb1", "APN": "internet", "MSISDN": "0000000002", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
+        UE__1 = net.addStation('UE__1', devices=["/dev/net/tun"], cap_add=["net_admin"], network_mode=NETWORK_MODE, dcmd="/bin/bash", cls=DockerSta, dimage='adaptive/ueransim:latest', range=116.0, txpower=20.0, position='-646.3,-127.1,0', environment={"GNB_HOSTNAME": "gnb1", "APN": "internet", "MSISDN": "0000000001", "MCC": "999", "MNC": "70", "SST": "1", "SD": "0xffffff", "TAC": "1", "KEY": "465B5CE8B199B49FAA5F0A2EE238A6BC", "OP_TYPE": "OPC", "OP": "E8ED289DEBA952E4283B54E88E6183CA", "IMEI": "356938035643803", "IMEISV": "4370816125816151", "TUNNEL_IFACE": "uesimtun0", "RADIO_IFACE": "eth0", "SESSION_TYPE": "IPv4", "PDU_SESSIONS": "1", "MOBILITY_ENABLED": "false", "UERANSIM_COMPONENT": "ue", "OVS_ENABLED": "false"})
+    else:
+        # Fallback to Docker containers using addDocker
+        print("⚠️  Adding UE nodes as Docker containers (no WiFi)")
+        UE__6 = net.addDocker('UE__6', network_mode=NETWORK_MODE, dimage='adaptive/ueransim:latest')
+        UE__5 = net.addDocker('UE__5', network_mode=NETWORK_MODE, dimage='adaptive/ueransim:latest')
+        UE__4 = net.addDocker('UE__4', network_mode=NETWORK_MODE, dimage='adaptive/ueransim:latest')
+        UE__3 = net.addDocker('UE__3', network_mode=NETWORK_MODE, dimage='adaptive/ueransim:latest')
+        UE__2 = net.addDocker('UE__2', network_mode=NETWORK_MODE, dimage='adaptive/ueransim:latest')
+        UE__1 = net.addDocker('UE__1', network_mode=NETWORK_MODE, dimage='adaptive/ueransim:latest')
 
-    info("*** Connecting Docker nodes to APs\n")
-    UE__1.cmd('iw dev UE__1-wlan0 connect gnb1-ssid')
-    UE__2.cmd('iw dev UE__2-wlan0 connect gnb1-ssid')
-    UE__3.cmd('iw dev UE__3-wlan0 connect gnb1-ssid')
-    UE__4.cmd('iw dev UE__4-wlan0 connect gnb2-ssid')
-    UE__5.cmd('iw dev UE__5-wlan0 connect gnb2-ssid')
-    UE__6.cmd('iw dev UE__6-wlan0 connect gnb2-ssid')
+    # Configure WiFi if available
+    if NETWORK_BACKEND in ["containernet", "mininet-wifi"] and hasattr(net, 'setPropagationModel'):
+        info("*** Configuring propagation model\n")
+        net.setPropagationModel(model="logDistance", exp=3)
+        
+        info("*** Configuring nodes\n")
+        net.configureWifiNodes()
+        
+        info("*** Connecting Docker nodes to APs\n")
+        if hasattr(UE__1, 'cmd'):
+            UE__1.cmd('iw dev UE__1-wlan0 connect gnb1-ssid')
+            UE__2.cmd('iw dev UE__2-wlan0 connect gnb1-ssid')
+            UE__3.cmd('iw dev UE__3-wlan0 connect gnb1-ssid')
+            UE__4.cmd('iw dev UE__4-wlan0 connect gnb2-ssid')
+            UE__5.cmd('iw dev UE__5-wlan0 connect gnb2-ssid')
+            UE__6.cmd('iw dev UE__6-wlan0 connect gnb2-ssid')
+    else:
+        print("⚠️  WiFi configuration skipped (not available)")
+        # Skip WiFi-specific commands
 
+    # Add regular hosts for testing
     h1 = net.addHost('h1')
     h2 = net.addHost('h2')
     h3 = net.addHost('h3')
@@ -296,12 +389,6 @@ def topology(args):
     h6 = net.addHost('h6')
     h7 = net.addHost('h7')
     h8 = net.addHost('h8')
-
-    info("*** Configuring propagation model\n")
-    net.setPropagationModel(model="logDistance", exp=3)
-
-    info("*** Configuring nodes\n")
-    net.configureWifiNodes()
 
     info("*** Creating links\n")
     # Link APs to gNBs
