@@ -233,12 +233,33 @@ def topology(args):
     info(f"*** Using universal Docker network: {NETWORK_MODE}\n")
     
     # Create network with appropriate backend
+    print(f"🔍 Network backend detected: {NETWORK_BACKEND}")
+    print(f"🔍 ContainernetClass type: {ContainernetClass}")
+    
     if NETWORK_BACKEND == "containernet":
         # Create Containernet with basic configuration
         net = ContainernetClass(topo=None,
                                build=False,
                                ipBase='10.0.0.0/8')
         print(f"✅ Created Containernet instance: {type(net)}")
+        
+        # Verify it's actually Containernet and not Mininet
+        if 'containernet' in str(type(net)).lower():
+            print("✅ Confirmed: Real Containernet instance")
+        elif 'mininet' in str(type(net)).lower():
+            print("⚠️  WARNING: Got Mininet instead of Containernet!")
+            # This means Containernet import failed, add fallback
+            if not hasattr(net, 'addDocker'):
+                def addDocker_fallback(name, **kwargs):
+                    print(f"⚠️  Adding {name} as regular host (Containernet not working)")
+                    host_kwargs = {}
+                    if 'ip' in kwargs:
+                        host_kwargs['ip'] = kwargs['ip']
+                    if 'mac' in kwargs:
+                        host_kwargs['mac'] = kwargs['mac']
+                    return net.addHost(name, **host_kwargs)
+                net.addDocker = addDocker_fallback
+                
     elif NETWORK_BACKEND == "mininet-wifi":
         # Create Mininet-WiFi network
         net = ContainernetClass(topo=None,
@@ -268,7 +289,11 @@ def topology(args):
     if hasattr(net, 'addDocker'):
         print("✅ addDocker method is available")
     else:
-        print("❌ addDocker method not found - this will cause errors")                          
+        print("❌ addDocker method not found - adding fallback")
+        def addDocker_emergency_fallback(name, **kwargs):
+            print(f"🚨 Emergency fallback: Adding {name} as regular host")
+            return net.addHost(name)
+        net.addDocker = addDocker_emergency_fallback                          
 
     info("*** Adding controller\n")
     Controller__1 = net.addController(name='Controller__1',
