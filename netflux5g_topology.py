@@ -31,17 +31,44 @@ Docker Network Usage:
 
 import sys
 import os
-from mininet.link import TCLink, Link, Intf
-from mininet.node import RemoteController, OVSKernelSwitch, Host, Node
-from mininet.log import setLogLevel, info
-from containernet.net import Containernet
-from mn_wifi.node import Station, OVSKernelAP
-from mn_wifi.link import wmediumd, Intf
-from mn_wifi.wmediumdConnector import interference
-from containernet.cli import CLI
-from containernet.node import DockerSta
-from containernet.term import makeTerm as makeTerm2
 from subprocess import call
+
+# Fix Python path for containernet
+containernet_path = "/home/melon/containernet"
+if containernet_path not in sys.path:
+    sys.path.insert(0, containernet_path)
+
+# Import in a specific order to avoid circular imports
+try:
+    # Import mininet utilities first
+    from mininet.log import setLogLevel, info
+    
+    # Import base modules before complex ones
+    import mininet.util
+    import mininet.node
+    
+    # Now safe to import from mininet.link
+    from mininet.link import TCLink, Link, Intf
+    from mininet.node import RemoteController, OVSKernelSwitch, Host, Node
+    
+    # Import containernet
+    from containernet.net import Containernet
+    from containernet.cli import CLI
+    from containernet.node import DockerSta
+    from containernet.term import makeTerm as makeTerm2
+    
+    # Import wifi modules last
+    from mn_wifi.node import Station, OVSKernelAP
+    from mn_wifi.link import wmediumd
+    from mn_wifi.wmediumdConnector import interference
+    
+    print("✅ All imports successful!")
+    
+except ImportError as e:
+    print(f"❌ Import error: {e}")
+    print("💡 Try running the fix script first:")
+    print("   cd netflux5g-editor && python3 fix_imports.py")
+    sys.exit(1)
 
 
 def sanitize_name(name):
