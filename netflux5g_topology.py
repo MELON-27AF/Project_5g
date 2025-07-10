@@ -285,15 +285,15 @@ def topology(args):
         net.addDocker = addDocker_fallback
         print(f"✅ Created Mininet instance with Docker fallback: {type(net)}")
     
-    # Verify addDocker method is available
-    if hasattr(net, 'addDocker'):
-        print("✅ addDocker method is available")
-    else:
-        print("❌ addDocker method not found - adding fallback")
+    # Universal fallback - ensure addDocker method exists
+    if not hasattr(net, 'addDocker'):
+        print("❌ addDocker method not found - adding emergency fallback")
         def addDocker_emergency_fallback(name, **kwargs):
             print(f"🚨 Emergency fallback: Adding {name} as regular host")
             return net.addHost(name)
-        net.addDocker = addDocker_emergency_fallback                          
+        net.addDocker = addDocker_emergency_fallback
+    else:
+        print("✅ addDocker method is available")                          
 
     info("*** Adding controller\n")
     Controller__1 = net.addController(name='Controller__1',
